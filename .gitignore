@@ -1,2 +1,5 @@
 data/
 .idea/
+.mypy_cache/
+/alaska2/alaska_pytorch/checkpoints/
+/alaska2/alaska_tensorflow/checkpoints/

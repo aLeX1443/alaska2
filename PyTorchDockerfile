@@ -20,6 +20,10 @@ RUN pip install pandas trimesh boto3 tqdm pillow scipy scikit-learn \
     click albumentations efficientnet_pytorch tensorboardX catalyst \
     cython pytest
 
+# Install the nightly build of PyTorch to use AMP.
+RUN pip install --pre -U torch torchvision \
+    -f https://download.pytorch.org/whl/nightly/cu101/torch_nightly.html
+
 RUN git clone https://github.com/dwgoon/jpegio
 RUN pip install jpegio/.
 
