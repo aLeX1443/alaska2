@@ -10,4 +10,3 @@ docker run --rm -it \
     -v "$(pwd):/alaska2/" \
     -w /alaska2/ \
     alaska2
-
