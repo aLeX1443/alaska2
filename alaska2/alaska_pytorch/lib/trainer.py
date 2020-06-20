@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple
 import gc
 import os
 import numpy as np
@@ -10,6 +10,8 @@ import torch.optim
 import torch.cuda
 import torch.distributed
 from torch import nn
+
+import torch_optimizer as optim
 
 try:
     from torch.cuda.amp import GradScaler, autocast
@@ -37,8 +39,8 @@ class Trainer:
         if not torch.cuda.is_available():
             raise ValueError("GPU not available.")
 
-        self.main_device = "cuda:0"
         self.devices = hyper_parameters["devices"]
+        self.main_device = self.devices[0]
 
         # Build the model.
         self.model = hyper_parameters["model"](n_classes=4)
@@ -80,20 +82,27 @@ class Trainer:
         # )
 
         # Define objects to keep track of smooth metrics.
-        self.train_loss_metric = MovingAverageMetric()
-        self.train_auc_metric = MovingAverageMetric()
-        self.validation_loss_metric = MovingAverageMetric()
-        self.validation_auc_metric = MovingAverageMetric()
+        self.train_loss_metric = MovingAverageMetric(window_size=1000)
+        self.train_auc_metric = MovingAverageMetric(window_size=200)
+        self.validation_loss_metric = MovingAverageMetric(window_size=1)
+        self.validation_auc_metric = MovingAverageMetric(window_size=1)
 
         self.model_checkpoint_dir = hyper_parameters["model_checkpoint_dir"]
         make_dir_if_not_exists(self.model_checkpoint_dir)
 
         self.hyper_parameters = hyper_parameters
+        self.input_data_type = hyper_parameters["input_data_type"]
+        self.use_quality_factor = hyper_parameters["use_quality_factor"]
+        self.separate_classes_by_quality_factor = hyper_parameters[
+            "separate_classes_by_quality_factor"
+        ]
         self.seed = hyper_parameters["seed"]
         self.epoch = 0
         self.model_name = hyper_parameters["model_name"]
         self.training_run_name = f"{self.model_name}_{round(time.time())}"
         self.n_epochs = hyper_parameters["n_epochs"]
+        self.best_auc_epoch = 0
+        self.best_auc_score = -np.inf
         self.best_val_epoch = 0
         self.best_val_loss = np.inf
         self.start_epoch = 1
@@ -118,10 +127,20 @@ class Trainer:
         # Check if we should continue training the model
         if hyper_parameters["trained_model_path"]:
             checkpoint = torch.load(hyper_parameters["trained_model_path"])
-            self.model.module.load_state_dict(checkpoint["state_dict"])
+            self.model.module.load_state_dict(
+                checkpoint["state_dict"], strict=False
+            )
             # self.scheduler.load_state_dict(checkpoint["scheduler"])
-            # self.optimiser.load_state_dict(checkpoint["optimiser"])
-            self.start_epoch = checkpoint["epoch"]
+            try:
+                self.optimiser.load_state_dict(checkpoint["optimiser"])
+            except ValueError:
+                pass
+            self.start_epoch = checkpoint["epoch"] + 1
+            try:
+                self.best_auc_epoch = checkpoint["best_auc_epoch"]
+                self.best_auc_score = checkpoint["best_auc_score"]
+            except KeyError:
+                pass
             self.best_val_epoch = checkpoint["best_val_epoch"]
             self.best_val_loss = checkpoint["best_val_loss"]
             print(f"Loaded weights and continuing to train model.")
@@ -154,21 +173,21 @@ class Trainer:
             # self.scheduler.step()
 
             with torch.no_grad():
-                validation_loss = self._valid_epoch(epoch)
+                validation_auc, validation_loss = self._valid_epoch(epoch)
 
-            if validation_loss <= self.best_val_loss:
+            if validation_auc >= self.best_auc_score:
                 print(
-                    f"Saving the best val model with loss: {validation_loss}"
+                    f"Saving the best AUC model with score: {validation_auc}"
                 )
-                self.best_val_loss = validation_loss
-                self.best_val_epoch = epoch
+                self.best_auc_score = validation_auc
+                self.best_auc_epoch = epoch
                 self._save_checkpoint(
                     epoch=epoch,
-                    filename=self.training_run_name + "_best_val_checkpoint",
+                    filename=self.training_run_name + "_best_auc_checkpoint",
                 )
             else:
                 print(
-                    f"Current best val model with loss: {self.best_val_loss} at epoch {self.best_val_epoch}"
+                    f"Current best AUC model with score: {self.best_auc_score} at epoch {self.best_auc_epoch}"
                 )
 
     def _train_epoch(self, epoch: int) -> None:
@@ -176,47 +195,63 @@ class Trainer:
         auc_meter = WeightedAUCMeter()
         # loss_criterion = nn.CrossEntropyLoss()
 
-        for batch_idx, (images, targets) in tqdm(
+        for batch_idx, input_batch in tqdm(
             enumerate(self.train_data_loader),
             desc="Training model",
             total=self.total_train_batches,
         ):
-            images = images.to(self.main_device).float()
-            targets = targets.to(self.main_device).float()
+            model_input, targets = self.load_batch(input_batch)
 
             self.optimiser.zero_grad()
 
             if self.hyper_parameters["use_amp"]:
                 with autocast():
-                    outputs = self.model(images)
+                    outputs = self.model(*model_input)
                     # Make sure there are no NaN values introduced by loss
                     # scaling.
                     assert not np.isnan(outputs.cpu().detach().numpy()).any()
-                    # _, labels = targets.max(dim=1)
                     loss = self.criterion(outputs, targets)
+                    # _, labels = targets.max(dim=1)
+                    # loss = loss_criterion(outputs, labels)
+
                 # Backpropagate and optimise using AMP.
                 # print(self.grad_scaler.get_scale())
                 self.grad_scaler.scale(loss).backward()
                 self.grad_scaler.step(self.optimiser)
                 self.grad_scaler.update()
+                # print("NaN found in output, not updating the AUC metric.")
+                # print(
+                #     f"Dropping grad_scaler scale from {self.grad_scaler.get_scale()} to "
+                #     f"{self.grad_scaler.get_scale() / 2}"
+                # )
+                # new_scale = self.grad_scaler.get_scale() / 2.0
+                # self.grad_scaler.update(new_scale=new_scale)
             else:
-                outputs = self.model(images)
-                # _, labels = targets.max(dim=0)
-                loss = self.criterion(outputs, targets)
-                # Backpropagate.
-                loss.backward()
+                with autocast(enabled=False):
+                    outputs = self.model(*model_input)
+                    # _, labels = targets.max(dim=0)
+                    loss = self.criterion(outputs, targets)
+                    # Backpropagate.
+                    loss.backward()
+
+            self.optimiser.step()
 
             # Update the metrics.
             auc_meter.update(targets, outputs)
-            self.train_loss_metric.update(loss.detach().item())
             self.train_auc_metric.update(auc_meter.avg)
+            self.train_loss_metric.update(loss.detach().item())
 
-            self.optimiser.step()
+            # print(
+            #     f"Train AUC: {auc_meter.avg}, "
+            #     f"Train loss: {loss.detach().item()}\n"
+            # )
 
             gc.collect()
 
             if batch_idx % self.stat_freq == 0:
-                start_iter = epoch * self.total_train_batches * len(self.devices)
+                start_iter = (
+                    epoch * self.total_train_batches * len(self.devices)
+                )
                 self.writer.add_scalar(
                     tag="train/loss",
                     scalar_value=self.train_loss_metric.moving_average,
@@ -232,30 +267,30 @@ class Trainer:
             f"Train loss: {self.train_loss_metric.moving_average}\n"
         )
 
-    def _valid_epoch(self, epoch: int) -> float:
+    def _valid_epoch(self, epoch: int) -> Tuple[float, float]:
         print("\nPerforming validation...")
         self.model.eval()
         auc_meter = WeightedAUCMeter()
 
         with torch.no_grad():
-            for batch_idx, (images, targets) in tqdm(
+            for batch_idx, input_batch in tqdm(
                 enumerate(self.val_data_loader),
                 desc="Validating model",
                 total=self.total_val_batches,
             ):
-                images = images.to(self.main_device).float()
-                targets = targets.to(self.main_device).float()
+                model_input, targets = self.load_batch(input_batch)
 
                 if self.hyper_parameters["use_amp"]:
                     with autocast():
-                        outputs = self.model(images)
+                        outputs = self.model(*model_input)
                         assert not np.isnan(
                             outputs.cpu().detach().numpy()
                         ).any()
                         loss = self.criterion(outputs, targets)
                 else:
-                    outputs = self.model(images)
-                    loss = self.criterion(outputs, targets)
+                    with autocast(enabled=False):
+                        outputs = self.model(*model_input)
+                        loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
                 auc_meter.update(targets, outputs)
@@ -279,7 +314,32 @@ class Trainer:
             global_step=epoch,
         )
 
-        return float(self.validation_loss_metric.moving_average)
+        return (
+            float(auc_meter.avg),
+            float(self.validation_loss_metric.moving_average),
+        )
+
+    def load_batch(self, input_batch):
+        if self.input_data_type in ["RGB", "YCbCr", "Combined_DCT"]:
+            if self.use_quality_factor:
+                images = input_batch[0].to(self.main_device).float()
+                quality_factor = input_batch[1].to(self.main_device).float()
+                targets = input_batch[2].to(self.main_device).long()
+                model_input = (images, quality_factor)
+            else:
+                images = input_batch[0].to(self.main_device).float()
+                targets = input_batch[1].to(self.main_device).long()
+                model_input = (images,)
+        else:
+            # Load the DCT data.
+            images = (
+                input_batch[0].to(self.main_device).float(),
+                input_batch[1].to(self.main_device).float(),
+                input_batch[2].to(self.main_device).float(),
+            )
+            targets = input_batch[3].to(self.main_device).float()
+            model_input = images
+        return model_input, targets
 
     def _save_checkpoint(self, epoch: float, filename: str) -> None:
         state = {
@@ -288,6 +348,8 @@ class Trainer:
             "optimiser": self.optimiser.state_dict(),
             # "scheduler": self.scheduler.state_dict(),
             "hyper_parameters": self.hyper_parameters,
+            "best_auc_score": self.best_auc_score,
+            "best_auc_epoch": self.best_auc_epoch,
             "best_val_loss": self.best_val_loss,
             "best_val_epoch": self.best_val_epoch,
         }

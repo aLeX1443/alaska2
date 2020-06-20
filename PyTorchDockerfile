@@ -5,11 +5,15 @@ WORKDIR /alaska2/
 ENV TZ=Europe/London
 ENV DEBIAN_FRONTEND=noninteractive
 
+# TODO uncomment this to run DCT
+# RUN conda remove -y jpeg
+
 RUN apt -y update \
     && apt install build-essential checkinstall -y \
     && apt -y install libreadline-gplv2-dev libncursesw5-dev libssl-dev \
         libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev libffi-dev \
-        zlib1g-dev libsm6 libxext6 libxrender-dev wget git \
+        zlib1g-dev libsm6 libxext6 libxrender-dev wget git libjpeg-turbo8 \
+        python-pydot python-pydot-ng graphviz\
     && apt -y clean \
     && apt -y autoremove \
     && rm -rf /var/lib/apt/lists/*
@@ -18,7 +22,7 @@ RUN pip install --upgrade pip
 RUN pip install opencv-python
 RUN pip install pandas trimesh boto3 tqdm pillow scipy scikit-learn \
     click albumentations efficientnet_pytorch tensorboardX catalyst \
-    cython pytest
+    cython pytest jpeg2dct torchviz torch_optimizer
 
 # Install the nightly build of PyTorch to use AMP.
 RUN pip install --pre -U torch torchvision \
@@ -29,3 +33,5 @@ RUN pip install jpegio/.
 
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+
+ENV PYTHONPATH="/alaska2/:${PYTHONPATH}"

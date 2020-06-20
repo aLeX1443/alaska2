@@ -7,11 +7,10 @@ def blend_submissions() -> None:
     submissions_path = "submissions/"
 
     submissions_to_blend = [
-        # "efficientnet_b0_lb_0_871_submission.csv",
-        "efficientnet_b0_lb_0_896_submission.csv",
-        "efficientnet_b3_lb_0_900_submission.csv",
-        "efficientnet_b3_lb_0_914_submission.csv",
-        "efficientnet_b3_lb_0_921_submission.csv",
+        "rgb_efficientnet_b3_lb_0_931_submission.csv",
+        "rgb_efficientnet_b3_lb_0_932_submission.csv",
+        "rgb_efficientnet_b5_lb_0_912_submission.csv",
+        "ycbcr_efficientnet_b3_lb_0_929_submission.csv",
     ]
     weights = [0.2, 0.3, 0.5]
 

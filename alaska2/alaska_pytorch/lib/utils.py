@@ -38,7 +38,7 @@ class EmptyScaler:
         pass
 
     @staticmethod
-    def update():
+    def update(new_scale=1.0):
         pass
 
     @staticmethod

@@ -1,20 +1,48 @@
 # Efficientnet
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b0
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b1
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b2
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b3
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b4
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b5
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b6
-from alaska2.alaska_pytorch.models.efficientnet import build_efficientnet_b7
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b0,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b1,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b2,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b3,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b4,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b5,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b6,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_efficientnet_b7,
+)
 
-# ResNext
-from alaska2.alaska_pytorch.models.resnext import build_resnext50_32x4d
-from alaska2.alaska_pytorch.models.resnext import build_resnext101_32x8d
+# Efficientnet with quality factor
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_quality_factor_efficientnet_b3,
+)
+from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_quality_factor_efficientnet_b5,
+)
 
-# WideResNet
-from alaska2.alaska_pytorch.models.wide_resnet import build_wide_resnet50_2
-from alaska2.alaska_pytorch.models.wide_resnet import build_wide_resnet101_2
+# DCTEfficientNet
 
-# DenseNet
-from alaska2.alaska_pytorch.models.densenet import build_densenet161
+from alaska2.alaska_pytorch.models.dct.efficientnet import (
+    build_dct_efficientnet_b0,
+    build_dct_multiple_input_efficientnet_b0,
+)
+
+# DCTResNet
+from alaska2.alaska_pytorch.models.dct.resnet import build_dct_resnet_50
+
+# YedroudjNet
+from alaska2.alaska_pytorch.models.colour.yedroudj_net import (
+    build_yedroudj_net,
+)

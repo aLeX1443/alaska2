@@ -3,3 +3,5 @@ data/
 .mypy_cache/
 /alaska2/alaska_pytorch/checkpoints/
 /alaska2/alaska_tensorflow/checkpoints/
+old_tensorboard_logs/
+tensorboard_logs/
