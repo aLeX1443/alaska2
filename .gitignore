@@ -5,3 +5,5 @@ data/
 /alaska2/alaska_tensorflow/checkpoints/
 old_tensorboard_logs/
 tensorboard_logs/
+submissions/
+__pycache__/

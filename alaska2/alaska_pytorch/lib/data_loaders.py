@@ -1,6 +1,8 @@
+import os
 import time
 from typing import Dict, Sequence, Optional, Tuple, Union
 import cv2
+import glob
 import numpy as np
 import jpegio
 
@@ -17,6 +19,7 @@ from albumentations import (
     VerticalFlip,
     Normalize,
 )
+from tqdm import tqdm
 
 from alaska2.lib.data_loaders import (
     load_data,
@@ -56,13 +59,10 @@ def make_train_and_validation_data_loaders(
     elif input_data_type == "DCT":
         data_set_class = DCTDataSet
         # Define a set of image augmentations.
-        augmentations_train = Compose([ToTensorV2()], p=1,)
-        augmentations_validation = Compose([ToTensorV2()], p=1)
-    elif input_data_type == "Combined_DCT":
-        data_set_class = CombinedDCTDataSet
-        # Define a set of image augmentations.
-        augmentations_train = Compose([ToTensorV2()], p=1,)
-        augmentations_validation = Compose([ToTensorV2()], p=1)
+        augmentations_train = Compose([VerticalFlip(p=0), HorizontalFlip(p=1)], p=1,)
+        augmentations_validation = Compose([], p=1)
+        # augmentations_train = None
+        # augmentations_validation = None
     else:
         raise ValueError(
             f"Invalid input data type provided: {input_data_type}"
@@ -174,6 +174,7 @@ class ColourDataSet(Dataset):
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         elif self.colour_space == "YCbCr":
             image = jpeg_decompress_ycbcr(img_path)
+            # TODO add 128 and normalise with imagenet mean and std
             image = image / 128
             # image = np.rollaxis(image, 2, 0)
         else:
@@ -223,12 +224,15 @@ class DCTDataSet(Dataset):
         image_names: Sequence[str],
         labels: Sequence[int],
         transforms: Optional[Compose] = None,
+        colour_space: str = "DCT",
+        use_quality_factor: bool = False,
+        separate_classes_by_quality_factor: bool = False,
     ) -> None:
         super().__init__()
         self.kinds = kinds
         self.image_names = image_names
         self.labels = labels
-        self.transforms = None
+        self.transforms = transforms
 
     def __len__(self) -> int:
         return len(self.image_names)
@@ -243,19 +247,46 @@ class DCTDataSet(Dataset):
         )
 
         # TODO perform transform on the raw image, save in tmp directory and
-        #  load with jpeg2dct.
+        #  load DCT coefficients.
 
-        dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
-            f"data/{kind}/{image_name}"
+        # dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
+        #     f"data/{kind}/{image_name}"
+        # )
+        arrays = np.load(f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}")
+        dct_y, dct_cb, dct_cr = (
+            arrays["arr_0"],
+            arrays["arr_1"],
+            arrays["arr_2"],
         )
+
+        print(dct_y[0][0])
+
+        dct_y = dct_y.astype(np.float32)
+        dct_cb = dct_cb.astype(np.float32)
+        dct_cr = dct_cr.astype(np.float32)
+
+        if self.transforms:
+            sample = {"image": dct_y}
+            sample = self.transforms(**sample)
+            dct_y = sample["image"]
+            sample = {"image": dct_cb}
+            sample = self.transforms(**sample)
+            dct_cb = sample["image"]
+            sample = {"image": dct_cr}
+            sample = self.transforms(**sample)
+            dct_cr = sample["image"]
+
+        print(dct_y[0][0])
+        import time
+        time.sleep(1000)
 
         dct_y = np.rollaxis(dct_y, 2, 0)
         dct_cb = np.rollaxis(dct_cb, 2, 0)
         dct_cr = np.rollaxis(dct_cr, 2, 0)
 
-        dct_y = dct_y / 128
-        dct_cb = dct_cb / 128
-        dct_cr = dct_cr / 128
+        dct_y = dct_y / 1024
+        dct_cb = dct_cb / 1024
+        dct_cr = dct_cr / 1024
 
         target = one_hot(4, label)
 
@@ -265,49 +296,32 @@ class DCTDataSet(Dataset):
         return list(self.labels)
 
 
-class CombinedDCTDataSet(Dataset):
-    def __init__(
-        self,
-        kinds: Sequence[str],
-        image_names: Sequence[str],
-        labels: Sequence[int],
-        transforms: Optional[Compose] = None,
-    ) -> None:
-        super().__init__()
-        self.kinds = kinds
-        self.image_names = image_names
-        self.labels = labels
-
-    def __len__(self) -> int:
-        return len(self.image_names)
-
-    def __getitem__(self, index: int) -> Tuple[np.ndarray, torch.tensor]:
-        kind, image_name, label = (
-            self.kinds[index],
-            self.image_names[index],
-            self.labels[index],
-        )
-
-        dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
-            f"data/{kind}/{image_name}", reshape=False
-        )
-
-        dct_y = np.rollaxis(dct_y, 2, 0)
-        dct_cb = np.rollaxis(dct_cb, 2, 0)
-        dct_cr = np.rollaxis(dct_cr, 2, 0)
-
-        dct = np.concatenate([dct_y, dct_cb, dct_cr])
-        dct = dct / 128
-
-        target = one_hot(4, label)
-
-        return dct, target
-
-    def get_labels(self):
-        return list(self.labels)
-
-
 def one_hot(size: int, target: int) -> torch.tensor:
     vec = torch.zeros(size, dtype=torch.float32)
     vec[target] = 1.0
     return vec
+
+
+def make_dir_if_not_exists(path):
+    if not os.path.exists(path):
+        os.makedirs(path, mode=0o755)
+
+
+def pre_process_and_save_dct_data():
+    for kind in tqdm(["Cover", "JMiPOD", "JUNIWARD", "UERD"], desc=""):
+        for file in tqdm(glob.glob1(f"data/Cover/", "*.jpg"), desc=""):
+            save_dir = f"data/dct/{kind}/"
+            load_dir = f"data/{kind}/"
+            save_file = f"{save_dir}/{file}".replace(".jpg", ".npz")
+            load_file = f"{load_dir}/{file}"
+            make_dir_if_not_exists(save_dir)
+
+            # Load the DCT arrays
+            dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(load_file)
+
+            # Save the arrays without any normalisation
+            np.savez_compressed(save_file, dct_y, dct_cb, dct_cr)
+
+
+if __name__ == "__main__":
+    pre_process_and_save_dct_data()

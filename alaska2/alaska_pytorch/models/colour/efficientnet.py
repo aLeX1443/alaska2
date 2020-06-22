@@ -127,6 +127,13 @@ def build_efficientnet_b8(n_classes: int) -> nn.Module:
     )
 
 
+def build_quality_factor_efficientnet_b2(n_classes: int) -> nn.Module:
+    return StegoQFactorEfficientNet.from_name(
+        model_name="efficientnet-b2",
+        override_params={"num_classes": n_classes},
+    )
+
+
 def build_quality_factor_efficientnet_b3(n_classes: int) -> nn.Module:
     return StegoQFactorEfficientNet.from_name(
         model_name="efficientnet-b3",

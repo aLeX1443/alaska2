@@ -105,30 +105,43 @@ def dct_from_jpeg(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def dct_from_jpeg_imageio(
-    path: str, reshape=True
+    path: str,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     jpeg_struct = jpegio.read(str(path))
     dct_coefficients = jpeg_struct.coef_arrays
 
-    # print(jpeg_struct.quant_tables[0])
-    # print(jpeg_struct.quant_tables[1])
-    # print(jpeg_struct.quant_tables[2])
+    # Get the quantised coefficients
+    dct_y = np.array(dct_coefficients[0])
+    dct_cb = np.array(dct_coefficients[1])
+    dct_cr = np.array(dct_coefficients[2])
 
-    # np.savetxt("dct_y.txt", dct_coefficients[0], fmt="%4d", delimiter=",", newline="\n")
-    # np.savetxt("dct_cb.txt", dct_coefficients[1], fmt="%4d", delimiter=",", newline="\n")
-    # np.savetxt("dct_cr.txt", dct_coefficients[2], fmt="%4d", delimiter=",", newline="\n")
+    # Transform the arrays from (512, 512) to (64, 64, 64) by taking sliding
+    # windows
+    dct_y = dct_array_from_matrix(dct_y)
+    dct_cb = dct_array_from_matrix(dct_cb)
+    dct_cr = dct_array_from_matrix(dct_cr)
 
-    dct_y = np.array(dct_coefficients[0], dtype=np.int8)
-    dct_cb = np.array(dct_coefficients[1], dtype=np.int8)
-    dct_cr = np.array(dct_coefficients[2], dtype=np.int8)
+    # Get the relevant quantisation tables
+    y_quant_table = jpeg_struct.quant_tables[0].reshape((64,))
+    cbcr_quant_table = jpeg_struct.quant_tables[1].reshape((64,))
 
-    if reshape:
-        dct_y = dct_y.reshape((64, 64, 64))
-        dct_cb = dct_cb.reshape((64, 64, 64))
-        dct_cr = dct_cr.reshape((64, 64, 64))
-    else:
-        dct_y = np.expand_dims(dct_y, axis=-1)
-        dct_cb = np.expand_dims(dct_cb, axis=-1)
-        dct_cr = np.expand_dims(dct_cr, axis=-1)
+    # Multiply the values by their respective quantisation table.
+    # Note:
+    # - This is element-wise multiplication, not matrix multiplication.
+    # - The Cb and Cr channels share the same quantisation table
+    dct_y = dct_y * y_quant_table
+    dct_cb = dct_cb * cbcr_quant_table
+    dct_cr = dct_cr * cbcr_quant_table
 
     return dct_y, dct_cb, dct_cr
+
+
+def dct_array_from_matrix(x):
+    """
+    Transform the coefficients array from shape (512, 512) to (64, 64, 64)
+    """
+    out = np.zeros((64, 64, 64), dtype=int)
+    for i in range(64):
+        for j in range(64):
+            out[i, j] = x[i * 8 : (i + 1) * 8, j * 8 : (j + 1) * 8].flatten()
+    return out

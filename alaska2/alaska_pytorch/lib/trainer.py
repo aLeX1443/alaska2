@@ -69,7 +69,7 @@ class Trainer:
         # due to FP16 overflow.
         if hyper_parameters["use_amp"]:
             self.grad_scaler = GradScaler(
-                init_scale=2.0 ** 12,
+                init_scale=2.0 ** 10,  # 2.0 ** 12
                 growth_interval=np.iinfo(np.int64).max,
                 growth_factor=1.000001,
                 backoff_factor=0.999999,
@@ -320,7 +320,7 @@ class Trainer:
         )
 
     def load_batch(self, input_batch):
-        if self.input_data_type in ["RGB", "YCbCr", "Combined_DCT"]:
+        if self.input_data_type in ["RGB", "YCbCr"]:
             if self.use_quality_factor:
                 images = input_batch[0].to(self.main_device).float()
                 quality_factor = input_batch[1].to(self.main_device).float()
