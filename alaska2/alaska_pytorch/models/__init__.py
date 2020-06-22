@@ -1,42 +1,30 @@
-# Efficientnet
+# Colour Efficientnet
 from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b0,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b1,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b2,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b3,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b4,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b5,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b6,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_efficientnet_b7,
 )
 
-# Efficientnet with quality factor
+# Colour Efficientnet with quality factor
 from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_quality_factor_efficientnet_b3,
-)
-from alaska2.alaska_pytorch.models.colour.efficientnet import (
+    build_quality_factor_efficientnet_b2,
     build_quality_factor_efficientnet_b5,
 )
 
-# DCTEfficientNet
 
+# DCTEfficientNet
 from alaska2.alaska_pytorch.models.dct.efficientnet import (
     build_dct_efficientnet_b0,
-    build_dct_multiple_input_efficientnet_b0,
+    build_dct_efficientnet_b1,
+    build_dct_efficientnet_b2,
+    build_dct_efficientnet_b3,
+    build_64_channel_dct_efficientnet_b0,
 )
 
 # DCTResNet
