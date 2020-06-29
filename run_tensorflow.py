@@ -5,6 +5,9 @@ Athena Docker container ID: a9dabee28391
 import os
 import click
 
+# This should be set to the number of physical cores the system has.
+os.environ["OMP_NUM_THREADS"] = "36"
+
 from alaska2.alaska_tensorflow.train import run_training_experiment
 from alaska2.alaska_tensorflow.config import EXPERIMENT_HYPER_PARAMETERS
 

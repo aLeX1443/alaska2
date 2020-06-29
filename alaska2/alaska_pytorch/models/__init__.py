@@ -24,7 +24,9 @@ from alaska2.alaska_pytorch.models.dct.efficientnet import (
     build_dct_efficientnet_b1,
     build_dct_efficientnet_b2,
     build_dct_efficientnet_b3,
-    build_64_channel_dct_efficientnet_b0,
+    build_dct_efficientnet_b7,
+    build_dct_efficientnet_b5,
+    build_dct_efficientnet_b7_no_weight_sharing,
 )
 
 # DCTResNet

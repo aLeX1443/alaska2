@@ -1,11 +1,9 @@
-from alaska2.alaska_pytorch.config import EXPERIMENT_HYPER_PARAMETERS
-from alaska2.alaska_pytorch.lib.data_loaders import (
-    make_train_and_validation_data_loaders,
-)
-from alaska2.alaska_pytorch.lib.trainer import Trainer
+from cifar10.config import EXPERIMENT_HYPER_PARAMETERS
+from cifar10.lib.data_loaders import make_train_and_validation_data_loaders
+from cifar10.lib.trainer import Trainer
 
 
-def run_stegoanalysis_experiment(experiment_number):
+def run_cifar10_experiment(experiment_number):
     hyper_parameters = EXPERIMENT_HYPER_PARAMETERS[experiment_number]
 
     # Create the train and validation data loaders.

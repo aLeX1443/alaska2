@@ -14,11 +14,15 @@ from tqdm import tqdm
 
 from alaska2.alaska_pytorch.config import EXPERIMENT_HYPER_PARAMETERS
 from alaska2.alaska_pytorch.lib.data_loaders import ColourDataSet
-from alaska2.lib.data_loaders import jpeg_decompress_ycbcr
+from alaska2.lib.data_loaders import (
+    jpeg_decompress_ycbcr,
+    dct_from_jpeg_imageio,
+)
 
 
 def perform_inference(experiment_number: int) -> None:
     hyper_parameters = EXPERIMENT_HYPER_PARAMETERS[experiment_number]
+    input_data_type = hyper_parameters["input_data_type"]
 
     data_loader = get_test_data_loader(hyper_parameters)
 
@@ -52,6 +56,12 @@ def perform_inference(experiment_number: int) -> None:
                 prediction = model(
                     input_data[0].to(device), input_data[1].to(device)
                 )
+            elif input_data_type == "DCT":
+                prediction = model(
+                    input_data[0].to(device),
+                    input_data[1].to(device),
+                    input_data[2].to(device),
+                )
             else:
                 prediction = model(input_data[0].to(device))
             prediction = (
@@ -78,14 +88,19 @@ def get_test_data_loader(hyper_parameters: dict) -> DataLoader:
 
     if input_data_type == "RGB":
         augmentations_test = Compose([Normalize(p=1), ToTensorV2()], p=1)
+        data_set_class = Alaska2TestColourDataset
     elif input_data_type == "YCbCr":
         augmentations_test = Compose([ToTensorV2()], p=1)
+        data_set_class = Alaska2TestColourDataset
+    elif input_data_type == "DCT":
+        augmentations_test = None
+        data_set_class = Alaska2TestDCTDataset
     else:
         raise ValueError(
             f"Invalid input data type provided: {input_data_type}"
         )
 
-    test_data_set = Alaska2TestDataset(
+    test_data_set = data_set_class(
         image_names=test_files,
         transforms=augmentations_test,
         colour_space=hyper_parameters["input_data_type"],
@@ -103,7 +118,7 @@ def get_test_data_loader(hyper_parameters: dict) -> DataLoader:
     )
 
 
-class Alaska2TestDataset(ColourDataSet):
+class Alaska2TestColourDataset(ColourDataSet):
     def __init__(
         self,
         image_names,
@@ -151,6 +166,46 @@ class Alaska2TestDataset(ColourDataSet):
 
     def __len__(self) -> int:
         return len(self.image_names)
+
+
+class Alaska2TestDCTDataset(Dataset):
+    def __init__(
+        self,
+        image_names,
+        transforms=None,
+        colour_space="DCT",
+        use_quality_factor=False,
+        separate_classes_by_quality_factor=False,
+    ) -> None:
+        super().__init__()
+        self.image_names = image_names
+        self.transforms = transforms
+
+    def __len__(self) -> int:
+        return len(self.image_names)
+
+    def __getitem__(self, index):
+        image_name = self.image_names[index]
+        img_path = f"data/Test/{image_name}"
+
+        dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(img_path)
+
+        dct_y = dct_y.astype(np.float32)
+        dct_cb = dct_cb.astype(np.float32)
+        dct_cr = dct_cr.astype(np.float32)
+
+        dct_y = np.rollaxis(dct_y, 2, 0)
+        dct_cb = np.rollaxis(dct_cb, 2, 0)
+        dct_cr = np.rollaxis(dct_cr, 2, 0)
+
+        dct_y = dct_y / 1024
+        dct_cb = dct_cb / 1024
+        dct_cr = dct_cr / 1024
+
+        return image_name, [dct_y, dct_cb, dct_cr]
+
+    def get_labels(self):
+        return list(self.image_names)
 
 
 def load_test_paths() -> np.ndarray:

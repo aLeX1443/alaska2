@@ -43,9 +43,7 @@ class Trainer:
         self.main_device = self.devices[0]
 
         # Build the model.
-        self.model = hyper_parameters["model"](
-            n_classes=hyper_parameters["n_classes"]
-        )
+        self.model = hyper_parameters["model"](n_classes=10)
 
         # Distribute over all GPUs.
         self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
@@ -71,7 +69,7 @@ class Trainer:
         # due to FP16 overflow.
         if hyper_parameters["use_amp"]:
             self.grad_scaler = GradScaler(
-                init_scale=2.0 ** 12,
+                init_scale=2.0 ** 6,
                 growth_interval=np.iinfo(np.int64).max,
                 growth_factor=1.000001,
                 backoff_factor=0.999999,
@@ -93,11 +91,6 @@ class Trainer:
         make_dir_if_not_exists(self.model_checkpoint_dir)
 
         self.hyper_parameters = hyper_parameters
-        self.input_data_type = hyper_parameters["input_data_type"]
-        self.use_quality_factor = hyper_parameters["use_quality_factor"]
-        self.separate_classes_by_quality_factor = hyper_parameters[
-            "separate_classes_by_quality_factor"
-        ]
         self.seed = hyper_parameters["seed"]
         self.epoch = 0
         self.model_name = hyper_parameters["model_name"]
@@ -123,27 +116,14 @@ class Trainer:
         # Check if we should continue training the model
         if hyper_parameters["trained_model_path"]:
             checkpoint = torch.load(hyper_parameters["trained_model_path"])
-            pre_trained_state_dict = checkpoint["state_dict"]
-            if (
-                "cifar10" in hyper_parameters["trained_model_path"]
-                or "imagenet"
-                in hyper_parameters["trained_model_path"]  # or True
-            ):
-                missing_keys = [
-                    "_fc.weight",
-                    "_fc.bias",
-                ]
-                for key in missing_keys:
-                    pre_trained_state_dict.pop(key)
-            else:
-                try:
-                    self.optimiser.load_state_dict(checkpoint["optimiser"])
-                except ValueError:
-                    pass
             self.model.module.load_state_dict(
-                pre_trained_state_dict, strict=False
+                checkpoint["state_dict"], strict=False
             )
             # self.scheduler.load_state_dict(checkpoint["scheduler"])
+            try:
+                self.optimiser.load_state_dict(checkpoint["optimiser"])
+            except ValueError:
+                pass
             self.start_epoch = checkpoint["epoch"] + 1
             try:
                 self.best_auc_epoch = checkpoint["best_auc_epoch"]
@@ -202,7 +182,6 @@ class Trainer:
     def _train_epoch(self, epoch: int) -> None:
         self.model.train()
         auc_meter = WeightedAUCMeter()
-        # loss_criterion = nn.CrossEntropyLoss()
 
         for batch_idx, input_batch in tqdm(
             enumerate(self.train_data_loader),
@@ -220,25 +199,12 @@ class Trainer:
                     # scaling.
                     assert not np.isnan(outputs.cpu().detach().numpy()).any()
                     loss = self.criterion(outputs, targets)
-                    # _, labels = targets.max(dim=1)
-                    # loss = loss_criterion(outputs, labels)
-
-                # Backpropagate and optimise using AMP.
-                # print(self.grad_scaler.get_scale())
                 self.grad_scaler.scale(loss).backward()
                 self.grad_scaler.step(self.optimiser)
                 self.grad_scaler.update()
-                # print("NaN found in output, not updating the AUC metric.")
-                # print(
-                #     f"Dropping grad_scaler scale from {self.grad_scaler.get_scale()} to "
-                #     f"{self.grad_scaler.get_scale() / 2}"
-                # )
-                # new_scale = self.grad_scaler.get_scale() / 2.0
-                # self.grad_scaler.update(new_scale=new_scale)
             else:
                 with autocast(enabled=False):
                     outputs = self.model(*model_input)
-                    # _, labels = targets.max(dim=0)
                     loss = self.criterion(outputs, targets)
                     # Backpropagate.
                     loss.backward()
@@ -329,25 +295,14 @@ class Trainer:
         )
 
     def load_batch(self, input_batch):
-        if self.input_data_type in ["RGB", "YCbCr"]:
-            if self.use_quality_factor:
-                images = input_batch[0].to(self.main_device).float()
-                quality_factor = input_batch[1].to(self.main_device).float()
-                targets = input_batch[2].to(self.main_device).long()
-                model_input = (images, quality_factor)
-            else:
-                images = input_batch[0].to(self.main_device).float()
-                targets = input_batch[1].to(self.main_device).long()
-                model_input = (images,)
-        else:
-            # Load the DCT data.
-            images = (
-                input_batch[0].to(self.main_device).float(),
-                input_batch[1].to(self.main_device).float(),
-                input_batch[2].to(self.main_device).float(),
-            )
-            targets = input_batch[3].to(self.main_device).float()
-            model_input = images
+        # Load the DCT data.
+        images = (
+            input_batch[0].to(self.main_device).float(),
+            input_batch[1].to(self.main_device).float(),
+            input_batch[2].to(self.main_device).float(),
+        )
+        targets = input_batch[3].to(self.main_device).float()
+        model_input = images
         return model_input, targets
 
     def _save_checkpoint(self, epoch: float, filename: str) -> None:

@@ -17,6 +17,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "rgb_efficientnet_b0",
         "model": build_efficientnet_b0,
         "input_data_type": "RGB",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -39,7 +40,8 @@ EXPERIMENT_HYPER_PARAMETERS = {
     1: {
         "model_name": "rgb_efficientnet_b3",
         "model": build_efficientnet_b3,
-        "input_data_type": "RGB",
+        "input_data_type": "DCT",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -63,6 +65,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "rgb_efficientnet_b5",
         "model": build_efficientnet_b5,
         "input_data_type": "RGB",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -86,6 +89,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "dct_efficientnet_b0",
         "model": build_dct_efficientnet_b0,
         "input_data_type": "DCT",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -93,7 +97,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/dct_efficientnet_b0_1592773901_checkpoint.pth",
+        "trained_model_path": None,  # "alaska2/alaska_pytorch/checkpoints/dct_efficientnet_b0_1592773901_checkpoint.pth",
         # Training loop:
         "batch_size": 256,
         "n_epochs": 1000,
@@ -106,32 +110,10 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "log_tensorboard_n_times_per_epoch": 25,
     },
     4: {
-        "model_name": "dct_efficientnet_b1",
-        "model": build_dct_efficientnet_b1,
+        "model_name": "dct_efficientnet_b7_no_weight_sharing",
+        "model": build_dct_efficientnet_b7_no_weight_sharing,
         "input_data_type": "DCT",
-        "use_quality_factor": False,
-        "separate_classes_by_quality_factor": False,
-        "use_amp": True,
-        "devices": [1],
-        "seed": 2020,
-        "validation_split": 0.2,
-        # Model parameters:
-        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/dct_efficientnet_b1_1592774011_checkpoint.pth",
-        # Training loop:
-        "batch_size": 512,
-        "n_epochs": 1000,
-        "learning_rate": 0.0002,
-        "lr_scheduler_exp_gamma": 0.95,
-        "training_workers": 1,
-        # Other:
-        "model_checkpoint_dir": MODELS_SAVE_DIR,
-        "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
-        "log_tensorboard_n_times_per_epoch": 25,
-    },
-    5: {
-        "model_name": "64_channel_dct_efficientnet_b3",
-        "model": build_64_channel_dct_efficientnet_b0,
-        "input_data_type": "DCT",
+        "n_classes": 4,  # 4
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -139,22 +121,47 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": None,
+        "trained_model_path": None,  # "alaska2/alaska_pytorch/checkpoints/dct_efficientnet_b3_no_weight_sharing_1593429797_best_auc_checkpoint.pth",
         # Training loop:
         "batch_size": 64,
         "n_epochs": 1000,
-        "learning_rate": 0.0001,
+        "learning_rate": 0.0002,
         "lr_scheduler_exp_gamma": 0.95,
-        "training_workers": 48,
+        "training_workers": 25,
         # Other:
         "model_checkpoint_dir": MODELS_SAVE_DIR,
         "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
-        "log_tensorboard_n_times_per_epoch": 100,
+        "log_tensorboard_n_times_per_epoch": 25,
+    },
+    5: {
+        "model_name": "dct_efficientnet_b5",
+        "model": build_dct_efficientnet_b5,
+        "input_data_type": "DCT",
+        "n_classes": 4,  # 2
+        "use_quality_factor": False,
+        "separate_classes_by_quality_factor": False,
+        "use_amp": True,
+        "devices": [0],
+        "seed": 2020,
+        "validation_split": 0.2,
+        # Model parameters:
+        "trained_model_path": None,
+        # Training loop:
+        "batch_size": 128,
+        "n_epochs": 1000,
+        "learning_rate": 0.001,
+        "lr_scheduler_exp_gamma": 0.95,
+        "training_workers": 25,
+        # Other:
+        "model_checkpoint_dir": MODELS_SAVE_DIR,
+        "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
+        "log_tensorboard_n_times_per_epoch": 25,
     },
     6: {
         "model_name": "dct_multiple_input_efficientnet_b0",
         "model": ...,
         "input_data_type": "DCT",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -178,6 +185,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "combined_dct_efficientnet_b0",
         "model": build_efficientnet_b0,
         "input_data_type": "Combined_DCT",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -201,6 +209,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "ycbcr_qf_input_efficientnet_b3",
         "model": build_quality_factor_efficientnet_b3,
         "input_data_type": "YCbCr",
+        "n_classes": 4,  # 2
         "use_quality_factor": True,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -224,6 +233,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "rgb_qf_input_efficientnet_b3",
         "model": build_quality_factor_efficientnet_b3,
         "input_data_type": "RGB",
+        "n_classes": 4,  # 2
         "use_quality_factor": True,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -247,6 +257,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "rgb_qf_input_efficientnet_b5",
         "model": build_quality_factor_efficientnet_b5,
         "input_data_type": "RGB",
+        "n_classes": 4,  # 2
         "use_quality_factor": True,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -270,6 +281,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "ycbcr_yedroudj_net",
         "model": build_yedroudj_net,
         "input_data_type": "YCbCr",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -293,6 +305,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "rgb_efficientnet_b2",
         "model": build_efficientnet_b2,
         "input_data_type": "RGB",
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,

@@ -14,33 +14,53 @@ from albumentations import (
 )
 
 from alaska2.alaska_tensorflow.config import SEED
-from alaska2.lib.data_loaders import load_data, add_fold_to_data_set
+from alaska2.lib.data_loaders import (
+    load_data,
+    add_fold_to_data_set,
+    dct_from_jpeg_imageio,
+)
 
 
 def create_train_and_validation_loaders(
-    batch_size=16, validation_fold_number=0
+    hyper_parameters, validation_fold_number=0,
 ):
+    input_data_type = hyper_parameters["input_data_type"]
+    batch_size = hyper_parameters["batch_size"]
+
     # Load a DataFrame with the files and targets.
     data_set = load_data()
 
     # Split the data set into folds.
     data_set = add_fold_to_data_set(data_set)
 
-    # Define a set of image augmentations.
-    augmentations_train = Compose(
-        [
-            VerticalFlip(p=0.5),
-            HorizontalFlip(p=0.5),
-            Normalize(p=1),
-            ToTensorV2(),
-        ],
-        p=1,
-    )
-    augmentations_validation = Compose([Normalize(p=1), ToTensorV2()], p=1,)
+    if input_data_type == "RGB":
+        data_set_class = ImageDataGenerator
+        # Define a set of image augmentations.
+        augmentations_train = Compose(
+            [
+                VerticalFlip(p=0.5),
+                HorizontalFlip(p=0.5),
+                Normalize(p=1),
+                ToTensorV2(),
+            ],
+            p=1,
+        )
+        augmentations_validation = Compose(
+            [Normalize(p=1), ToTensorV2()], p=1,
+        )
+    elif input_data_type == "DCT":
+        data_set_class = DCTDataGenerator
+        # Define a set of image augmentations.
+        augmentations_train = None
+        augmentations_validation = None
+    else:
+        raise ValueError(
+            f"Invalid input data type provided: {input_data_type}"
+        )
 
     # Create the batched sequence generators.
     train_dataset = Batcher(
-        ImageDataGenerator(
+        data_set_class(
             kinds=data_set[
                 data_set["fold"] != validation_fold_number
             ].kind.values,
@@ -55,7 +75,7 @@ def create_train_and_validation_loaders(
         batch_size=batch_size,
     )
     validation_dataset = Batcher(
-        ImageDataGenerator(
+        data_set_class(
             kinds=data_set[
                 data_set["fold"] == validation_fold_number
             ].kind.values,
@@ -74,13 +94,7 @@ def create_train_and_validation_loaders(
 
 
 class ImageDataGenerator(Sequence):
-    def __init__(self, kinds, image_names, labels, transforms,) -> None:
-        """
-        Parameters
-        ----------
-        kinds : list
-
-        """
+    def __init__(self, kinds, image_names, labels, transforms):
         super().__init__()
         self.kinds = kinds
         self.image_names = image_names
@@ -97,7 +111,7 @@ class ImageDataGenerator(Sequence):
             self.labels[index],
         )
 
-        image = cv2.imread(f"data/{kind}/{image_name}", cv2.IMREAD_COLOR)
+        image = cv2.imread(f"data/{kind}/{image_name}", cv2.IMREAD_UNCHANGED)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
 
         if self.transforms:
@@ -117,6 +131,42 @@ class ImageDataGenerator(Sequence):
 
     def on_epoch_end(self):
         gc.collect()
+
+
+class DCTDataGenerator(ImageDataGenerator):
+    def __getitem__(self, index):
+        kind, image_name, label = (
+            self.kinds[index],
+            self.image_names[index],
+            self.labels[index],
+        )
+        dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
+            f"data/{kind}/{image_name}"
+        )
+
+        dct_y = dct_y.astype(np.float32)
+        dct_cb = dct_cb.astype(np.float32)
+        dct_cr = dct_cr.astype(np.float32)
+
+        # dct_y = np.rollaxis(dct_y, 2, 0)
+        # dct_cb = np.rollaxis(dct_cb, 2, 0)
+        # dct_cr = np.rollaxis(dct_cr, 2, 0)
+
+        dct_y = dct_y / 1024
+        dct_cb = dct_cb / 1024
+        dct_cr = dct_cr / 1024
+
+        # Flatten each array from shape (64, 64, 64) to (4096, 64)
+        dct_y = dct_y.reshape((4096, 64))
+        dct_cb = dct_cb.reshape((4096, 64))
+        dct_cr = dct_cr.reshape((4096, 64))
+
+        # Concatenate the arrays
+        input_data = np.concatenate((dct_y, dct_cb, dct_cr), axis=0)
+
+        target = one_hot(4, label)
+
+        return input_data, target
 
 
 class Batcher(Sequence):

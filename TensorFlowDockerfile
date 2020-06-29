@@ -5,21 +5,26 @@ WORKDIR /alaska2/
 ENV TZ=Europe/London
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt -y update \
-    && apt install build-essential checkinstall -y \
-    && apt -y install libreadline-gplv2-dev libncursesw5-dev libssl-dev \
+RUN apt-get -y update \
+    && apt-get install build-essential checkinstall -y \
+    && apt-get -y install libreadline-gplv2-dev libncursesw5-dev libssl-dev \
         libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev libffi-dev \
-        zlib1g-dev libsm6 libxext6 libxrender-dev wget \
-    && apt -y clean \
-    && apt -y autoremove \
+        zlib1g-dev libsm6 libxext6 libxrender-dev wget git libjpeg-turbo8\
+    && apt-get -y clean \
+    && apt-get -y autoremove \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --upgrade pip
 RUN pip install opencv-python
 RUN pip install pandas trimesh boto3 tqdm pillow scipy scikit-learn \
-    tensorflow_addons click
+    tensorflow_addons click albumentations torch torchvision cython
 
 RUN pip install -U --pre efficientnet
 
+RUN git clone https://github.com/dwgoon/jpegio
+RUN pip install jpegio/.
+
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+
+ENV PYTHONPATH="/alaska2/:${PYTHONPATH}"
