@@ -67,13 +67,13 @@ class Trainer:
         # to the largest value that does not cause NaNs in the model's output
         # due to FP16 overflow.
         if hyper_parameters["use_amp"]:
-            # self.grad_scaler = GradScaler(
-            #     init_scale=2.0 ** 6,
-            #     growth_interval=np.iinfo(np.int64).max,
-            #     growth_factor=1.000001,
-            #     backoff_factor=0.999999,
-            # )
-            self.grad_scaler = GradScaler()
+            self.grad_scaler = GradScaler(
+                init_scale=2.0 ** 4,
+                growth_interval=np.iinfo(np.int64).max,
+                growth_factor=1.000001,
+                backoff_factor=0.999999,
+            )
+            # self.grad_scaler = GradScaler()
         else:
             self.grad_scaler = EmptyScaler()
 

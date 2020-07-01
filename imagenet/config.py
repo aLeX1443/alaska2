@@ -18,7 +18,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": None,  # "imagenet/checkpoints/dct_efficientnet_b7_no_weight_sharing_1593595066_checkpoint.pth",
+        "trained_model_path": "imagenet/checkpoints/dct_efficientnet_b7_no_weight_sharing_1593595066_checkpoint.pth",
         # Training loop:
         "batch_size": 112,
         "n_epochs": 1000,

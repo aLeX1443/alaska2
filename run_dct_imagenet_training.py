@@ -5,7 +5,7 @@ import click
 os.environ["OMP_NUM_THREADS"] = "36"
 
 from imagenet.config import EXPERIMENT_HYPER_PARAMETERS
-from run_pytorch import initialise_torch
+from run_pytorch_training import initialise_torch
 
 
 @click.command()
