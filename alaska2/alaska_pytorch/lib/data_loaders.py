@@ -1,5 +1,4 @@
 import os
-import time
 from typing import Dict, Sequence, Optional, Tuple, Union
 import cv2
 import glob
@@ -27,6 +26,9 @@ from alaska2.lib.data_loaders import (
     dct_from_jpeg,
     dct_from_jpeg_imageio,
     jpeg_decompress_ycbcr,
+)
+from imagenet.lib.data_loaders import (
+    load_dct_values_from_pre_processed_imagenet_image,
 )
 
 
@@ -252,39 +254,30 @@ class DCTDataSet(Dataset):
             self.labels[index],
         )
 
-        # TODO perform transform on the raw image, save in tmp directory and
-        #  load DCT coefficients.
+        (
+            dct_y,
+            dct_cb,
+            dct_cr,
+        ) = load_dct_values_from_pre_processed_imagenet_image(
+            f"data/{kind}/{image_name}"
+        )
 
         # dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
         #     f"data/{kind}/{image_name}"
         # )
-        arrays = np.load(
-            f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}"
-        )
-        dct_y, dct_cb, dct_cr = (
-            arrays["arr_0"],
-            arrays["arr_1"],
-            arrays["arr_2"],
-        )
+
+        # arrays = np.load(
+        #     f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}"
+        # )
+        # dct_y, dct_cb, dct_cr = (
+        #     arrays["arr_0"],
+        #     arrays["arr_1"],
+        #     arrays["arr_2"],
+        # )
 
         dct_y = dct_y.astype(np.float32)
         dct_cb = dct_cb.astype(np.float32)
         dct_cr = dct_cr.astype(np.float32)
-
-        if self.transforms:
-            sample = {"image": dct_y}
-            sample = self.transforms(**sample)
-            dct_y = sample["image"]
-            sample = {"image": dct_cb}
-            sample = self.transforms(**sample)
-            dct_cb = sample["image"]
-            sample = {"image": dct_cr}
-            sample = self.transforms(**sample)
-            dct_cr = sample["image"]
-
-        # print(dct_y[0][0])
-        # import time
-        # time.sleep(1000)
 
         dct_y = np.rollaxis(dct_y, 2, 0)
         dct_cb = np.rollaxis(dct_cb, 2, 0)

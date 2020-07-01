@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:1.5-cuda10.1-cudnn7-devel
+FROM pytorch/pytorch:1.5.1-cuda10.1-cudnn7-devel
 
 WORKDIR /alaska2/
 
@@ -13,7 +13,7 @@ RUN apt-get -y update \
     && apt-get -y install libreadline-gplv2-dev libncursesw5-dev libssl-dev \
         libsqlite3-dev tk-dev libgdbm-dev libc6-dev libbz2-dev libffi-dev \
         zlib1g-dev libsm6 libxext6 libxrender-dev wget git libjpeg-turbo8 \
-        python-pydot python-pydot-ng graphviz\
+        python-pydot python-pydot-ng graphviz p7zip-full \
     && apt-get -y clean \
     && apt-get -y autoremove \
     && rm -rf /var/lib/apt/lists/*
@@ -22,7 +22,7 @@ RUN pip install --upgrade pip
 RUN pip install opencv-python
 RUN pip install pandas trimesh boto3 tqdm pillow scipy scikit-learn \
     click albumentations efficientnet_pytorch tensorboardX catalyst \
-    cython pytest jpeg2dct torchviz torch_optimizer
+    cython pytest jpeg2dct torchviz torch_optimizer tensorflow-gpu
 
 # Install the nightly build of PyTorch to use AMP.
 RUN pip install --pre -U torch torchvision \

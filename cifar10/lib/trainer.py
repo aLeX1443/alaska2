@@ -57,10 +57,9 @@ class Trainer:
         # Define a reusable loss criterion.
         self.criterion = LabelSmoothing().to(self.main_device)
 
-        self.optimiser = torch.optim.AdamW(
+        self.optimiser = torch.optim.RMSprop(
             filter(lambda x: x.requires_grad, self.model.parameters()),
             lr=hyper_parameters["learning_rate"],
-            amsgrad=False,
         )
 
         # Create a gradient scaler for Automatic Mixed Precision (AMP).

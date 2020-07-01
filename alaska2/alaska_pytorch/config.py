@@ -113,7 +113,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "model_name": "dct_efficientnet_b7_no_weight_sharing",
         "model": build_dct_efficientnet_b7_no_weight_sharing,
         "input_data_type": "DCT",
-        "n_classes": 4,  # 4
+        "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
@@ -121,13 +121,13 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": None,  # "alaska2/alaska_pytorch/checkpoints/dct_efficientnet_b3_no_weight_sharing_1593429797_best_auc_checkpoint.pth",
+        "trained_model_path": "imagenet/checkpoints/dct_efficientnet_b7_no_weight_sharing_1593550498_checkpoint.pth",
         # Training loop:
-        "batch_size": 64,
+        "batch_size": 128,
         "n_epochs": 1000,
         "learning_rate": 0.0002,
         "lr_scheduler_exp_gamma": 0.95,
-        "training_workers": 25,
+        "training_workers": 20,
         # Other:
         "model_checkpoint_dir": MODELS_SAVE_DIR,
         "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,

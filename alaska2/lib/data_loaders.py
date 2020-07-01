@@ -110,10 +110,8 @@ def dct_from_jpeg(path: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     return load_dct(path)
 
 
-def dct_from_jpeg_imageio(
-    path: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    jpeg_struct = jpegio.read(str(path))
+def dct_from_jpeg_imageio(path,) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    jpeg_struct = jpegio.read(path)
     dct_coefficients = jpeg_struct.coef_arrays
 
     # Get the quantised coefficients
@@ -144,7 +142,7 @@ def dct_from_jpeg_imageio(
 
 def dct_array_from_matrix(x):
     """
-    Transform the coefficients array from shape (512, 512) to (64, 64, 64)
+    Transform the coefficients array from shape e.g. (512, 512) to (64, 64, 64)
     """
     i_length = int(x.shape[0] / 8)
     j_length = int(x.shape[1] / 8)

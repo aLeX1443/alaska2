@@ -48,27 +48,17 @@ class DCTEfficientNet(nn.Module):
         self._blocks = nn.ModuleList([])
         for i, block_args in enumerate(self._blocks_args):
             # Update block input and output filters based on depth multiplier.
-            if True:  # i != 0:
-                block_args = block_args._replace(
-                    input_filters=round_filters(
-                        block_args.input_filters, self._global_params
-                    ),
-                    output_filters=round_filters(
-                        block_args.output_filters, self._global_params
-                    ),
-                    num_repeat=round_repeats(
-                        block_args.num_repeat, self._global_params
-                    ),
-                )
-            else:
-                block_args = block_args._replace(
-                    output_filters=round_filters(
-                        block_args.output_filters, self._global_params
-                    ),
-                    num_repeat=round_repeats(
-                        block_args.num_repeat, self._global_params
-                    ),
-                )
+            block_args = block_args._replace(
+                input_filters=round_filters(
+                    block_args.input_filters, self._global_params
+                ),
+                output_filters=round_filters(
+                    block_args.output_filters, self._global_params
+                ),
+                num_repeat=round_repeats(
+                    block_args.num_repeat, self._global_params
+                ),
+            )
             print(i, block_args)
 
             # The first block needs to take care of stride and filter size increase.
@@ -122,54 +112,12 @@ class DCTEfficientNet(nn.Module):
 
         return x
 
-    # @autocast()
-    def forward(self, dct_y, dct_cb, dct_cr):
-        x = torch.cat((dct_y, dct_cb, dct_cr), dim=1)
-        bs = x.size(0)
-
-        # Convolution layers
-        x = self.extract_features(x)
-
-        # Pooling and final linear layer
-        x = self._avg_pooling(x)
-        x = x.view(bs, -1)
-        x = self._dropout(x)
-        x = self._fc(x)
-        return x
-
-    def forward_1(self, dct_y, dct_cb, dct_cr):
-        bs = dct_y.size(0)
-
-        # Convolution layers
-        x_dct_y = self.extract_features(dct_y)
-        x_dct_cb = self.extract_features(dct_cb)
-        x_dct_cr = self.extract_features(dct_cr)
-
-        # Pooling
-        x_dct_y = self._avg_pooling(x_dct_y)
-        x_dct_cb = self._avg_pooling(x_dct_cb)
-        x_dct_cr = self._avg_pooling(x_dct_cr)
-
-        # Flatten
-        x_dct_y = x_dct_y.view(bs, -1)
-        x_dct_cb = x_dct_cb.view(bs, -1)
-        x_dct_cr = x_dct_cr.view(bs, -1)
-
-        x = torch.cat((x_dct_y, x_dct_cb, x_dct_cr), dim=1)
-
-        # TODO try adding dropout
-        x = self._fc(x)
-        return x
-
     @classmethod
     def from_name(cls, model_name, override_params=None):
         cls._check_model_name_is_valid(model_name)
         blocks_args, global_params = get_model_params(
             model_name, override_params
         )
-        # blocks_args[0] = blocks_args[0]._replace(input_filters=64)  # 192
-        # print(blocks_args[0])
-        # exit()
         return cls(blocks_args, global_params)
 
     @classmethod
@@ -211,16 +159,6 @@ class DCTEfficientNet(nn.Module):
             missing_keys = [
                 "_fc.weight",
                 "_fc.bias",
-                "_blocks.0._depthwise_conv.weight",
-                "_blocks.0._bn1.weight",
-                "_blocks.0._bn1.bias",
-                "_blocks.0._bn1.running_mean",
-                "_blocks.0._bn1.running_var",
-                "_blocks.0._se_reduce.weight",
-                "_blocks.0._se_reduce.bias",
-                "_blocks.0._se_expand.weight",
-                "_blocks.0._se_expand.bias",
-                "_blocks.0._project_conv.weight",
             ]
 
             for key in missing_keys:
@@ -234,7 +172,7 @@ class DCTEfficientNet(nn.Module):
         print("Loaded pretrained weights for {}".format(model_name))
 
 
-class CustomEfficientNetB7(nn.Module):
+class CustomEfficientNetB3(nn.Module):
     def __init__(self, blocks_args=None, global_params=None):
         super().__init__()
         assert isinstance(blocks_args, list), "blocks_args should be a list"
@@ -413,26 +351,37 @@ class CustomEfficientNetB7(nn.Module):
 
 class DCTMultipleInputEfficientNet(nn.Module):
     def __init__(
-        self, model_name: str = "efficientnet-b0", num_classes: int = 4,
+        self, model_name: str = "efficientnet-b7", num_classes: int = 4,
     ) -> None:
         super().__init__()
         # Make separate models so we don't share weights
-        self.dct_y_efficientnet = DCTEfficientNet.from_pretrained(
-            model_name=model_name, num_classes=4
-        )
-        self.dct_cb_efficientnet = DCTEfficientNet.from_pretrained(
-            model_name=model_name, num_classes=4
-        )
-        self.dct_cr_efficientnet = DCTEfficientNet.from_pretrained(
-            model_name=model_name, num_classes=4
-        )
-        # self.dct_y_efficientnet = CustomEfficientNetB7.from_pretrained(
+        # self.dct_y_efficientnet = DCTEfficientNet.from_pretrained(
         #     model_name=model_name, num_classes=4
         # )
-        # self.dct_cb_efficientnet = CustomEfficientNetB7.from_pretrained(
+        # self.dct_cb_efficientnet = DCTEfficientNet.from_pretrained(
         #     model_name=model_name, num_classes=4
         # )
-        # self.dct_cr_efficientnet = CustomEfficientNetB7.from_pretrained(
+        # self.dct_cr_efficientnet = DCTEfficientNet.from_pretrained(
+        #     model_name=model_name, num_classes=4
+        # )
+
+        self.dct_y_efficientnet = DCTEfficientNet.from_name(
+            model_name=model_name,
+        )
+        self.dct_cb_efficientnet = DCTEfficientNet.from_name(
+            model_name=model_name,
+        )
+        self.dct_cr_efficientnet = DCTEfficientNet.from_name(
+            model_name=model_name,
+        )
+
+        # self.dct_y_efficientnet = CustomEfficientNetB3.from_pretrained(
+        #     model_name=model_name, num_classes=4
+        # )
+        # self.dct_cb_efficientnet = CustomEfficientNetB3.from_pretrained(
+        #     model_name=model_name, num_classes=4
+        # )
+        # self.dct_cr_efficientnet = CustomEfficientNetB3.from_pretrained(
         #     model_name=model_name, num_classes=4
         # )
         self._avg_pooling = nn.AdaptiveAvgPool2d(1)
