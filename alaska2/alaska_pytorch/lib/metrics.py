@@ -4,6 +4,19 @@ from sklearn.metrics import auc, roc_curve
 
 import torch
 from torch import nn
+from typing import Tuple
+
+
+class BatchAverage:
+    def __init__(self) -> None:
+        self.all_values = []
+
+    def update(self, value: float) -> None:
+        self.all_values.append(value)
+
+    @property
+    def avg(self) -> float:
+        return float(np.mean(self.all_values))
 
 
 class MovingAverageMetric:
@@ -20,6 +33,14 @@ class MovingAverageMetric:
         return np.mean(self.metric_sequence)
 
 
+def get_argmax_from_prediction_and_target(
+    y_true: torch.tensor, y_pred: torch.tensor
+) -> Tuple[np.ndarray, np.ndarray]:
+    y_true = y_true.cpu().numpy().argmax(axis=1).clip(min=0, max=1).astype(int)
+    y_pred = 1 - nn.functional.softmax(y_pred, dim=1).data.cpu().numpy()[:, 0]
+    return y_true, y_pred
+
+
 class WeightedAUCMeter:
     def __init__(self) -> None:
         self.y_true = np.array([0, 1])
@@ -30,12 +51,7 @@ class WeightedAUCMeter:
         self.y_pred = np.array([0.5, 0.5])
 
     def update(self, y_true: torch.tensor, y_pred: torch.tensor) -> None:
-        y_true = (
-            y_true.cpu().numpy().argmax(axis=1).clip(min=0, max=1).astype(int)
-        )
-        y_pred = (
-            1 - nn.functional.softmax(y_pred, dim=1).data.cpu().numpy()[:, 0]
-        )
+        y_true, y_pred = get_argmax_from_prediction_and_target(y_true, y_pred)
         self.y_true = np.hstack((self.y_true, y_true))
         self.y_pred = np.hstack((self.y_pred, y_pred))
 
@@ -73,6 +89,20 @@ def alaska_weighted_auc(y_true: torch.tensor, y_valid: torch.tensor) -> float:
             sub_metric = score * weight
             competition_metric += sub_metric
     except Exception as e:
-        print(f"Exception in computing AUC: {e}.\n Returning 0.0")
+        print(f"Exception in computing AUC: {e}.\nReturning 0.0")
         return 0.0
     return competition_metric / normalisation
+
+
+def top_k_accuracy(output, target, top_k=1):
+    assert len(output) == len(target)
+    batch_size = target.size(0)
+    print(output.shape)
+    print(target.shape)
+    predictions = output.topk(k=top_k, dim=1)[0]
+    print(predictions.shape)
+    print(target.view(1, -1).expand_as(predictions).shape)
+    exit()
+    correct = predictions.eq(target.view(1, -1).expand_as(predictions))
+    correct_k = correct[:top_k].view(-1).float().sum(0, keepdim=True)
+    return correct_k.mul_(100.0 / batch_size)

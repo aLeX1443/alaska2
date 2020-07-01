@@ -1,3 +1,5 @@
 data/
 alaska2/alaska_pytorch/checkpoints/
 alaska2/alaska_tensorflow/checkpoints/
+cifar10/checkpoints/
+imagenet/checkpoints/

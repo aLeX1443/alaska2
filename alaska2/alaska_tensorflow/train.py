@@ -128,9 +128,7 @@ def get_train_and_validation_generators(hyper_parameters):
     (
         training_data_generator,
         validation_data_generator,
-    ) = create_train_and_validation_loaders(
-        batch_size=hyper_parameters["batch_size"],
-    )
+    ) = create_train_and_validation_loaders(hyper_parameters=hyper_parameters)
     return (
         training_data_generator,
         validation_data_generator,

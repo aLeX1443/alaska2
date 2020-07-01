@@ -11,6 +11,8 @@ import torch.cuda
 import torch.distributed
 from torch import nn
 
+import torch_optimizer as optim
+
 try:
     from torch.cuda.amp import GradScaler, autocast
 except ImportError:
@@ -26,9 +28,6 @@ from alaska2.alaska_pytorch.lib.utils import (
 from alaska2.alaska_pytorch.lib.metrics import (
     MovingAverageMetric,
     WeightedAUCMeter,
-    BatchAverage,
-    alaska_weighted_auc,
-    get_argmax_from_prediction_and_target,
 )
 
 
@@ -44,9 +43,7 @@ class Trainer:
         self.main_device = self.devices[0]
 
         # Build the model.
-        self.model = hyper_parameters["model"](
-            n_classes=hyper_parameters["n_classes"]
-        )
+        self.model = hyper_parameters["model"](n_classes=10)
 
         # Distribute over all GPUs.
         self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
@@ -60,11 +57,6 @@ class Trainer:
         # Define a reusable loss criterion.
         self.criterion = LabelSmoothing().to(self.main_device)
 
-        # self.optimiser = torch.optim.AdamW(
-        #     filter(lambda x: x.requires_grad, self.model.parameters()),
-        #     lr=hyper_parameters["learning_rate"],
-        #     amsgrad=False,
-        # )
         self.optimiser = torch.optim.RMSprop(
             filter(lambda x: x.requires_grad, self.model.parameters()),
             lr=hyper_parameters["learning_rate"],
@@ -89,19 +81,15 @@ class Trainer:
         # )
 
         # Define objects to keep track of smooth metrics.
+        self.train_loss_metric = MovingAverageMetric(window_size=1000)
         self.train_auc_metric = MovingAverageMetric(window_size=200)
-        self.train_loss_metric = MovingAverageMetric(window_size=200)
-        # self.train_loss_metric = BatchAverage()
+        self.validation_loss_metric = MovingAverageMetric(window_size=1)
+        self.validation_auc_metric = MovingAverageMetric(window_size=1)
 
         self.model_checkpoint_dir = hyper_parameters["model_checkpoint_dir"]
         make_dir_if_not_exists(self.model_checkpoint_dir)
 
         self.hyper_parameters = hyper_parameters
-        self.input_data_type = hyper_parameters["input_data_type"]
-        self.use_quality_factor = hyper_parameters["use_quality_factor"]
-        self.separate_classes_by_quality_factor = hyper_parameters[
-            "separate_classes_by_quality_factor"
-        ]
         self.seed = hyper_parameters["seed"]
         self.epoch = 0
         self.model_name = hyper_parameters["model_name"]
@@ -127,27 +115,14 @@ class Trainer:
         # Check if we should continue training the model
         if hyper_parameters["trained_model_path"]:
             checkpoint = torch.load(hyper_parameters["trained_model_path"])
-            pre_trained_state_dict = checkpoint["state_dict"]
-            if (
-                "cifar10" in hyper_parameters["trained_model_path"]
-                or "imagenet"
-                in hyper_parameters["trained_model_path"]  # or True
-            ):
-                missing_keys = [
-                    "_fc.weight",
-                    "_fc.bias",
-                ]
-                for key in missing_keys:
-                    pre_trained_state_dict.pop(key)
-            else:
-                try:
-                    self.optimiser.load_state_dict(checkpoint["optimiser"])
-                except ValueError:
-                    pass
             self.model.module.load_state_dict(
-                pre_trained_state_dict, strict=False
+                checkpoint["state_dict"], strict=False
             )
             # self.scheduler.load_state_dict(checkpoint["scheduler"])
+            try:
+                self.optimiser.load_state_dict(checkpoint["optimiser"])
+            except ValueError:
+                pass
             self.start_epoch = checkpoint["epoch"] + 1
             try:
                 self.best_auc_epoch = checkpoint["best_auc_epoch"]
@@ -206,7 +181,6 @@ class Trainer:
     def _train_epoch(self, epoch: int) -> None:
         self.model.train()
         auc_meter = WeightedAUCMeter()
-        loss_meter = BatchAverage()
 
         for batch_idx, input_batch in tqdm(
             enumerate(self.train_data_loader),
@@ -220,8 +194,10 @@ class Trainer:
             if self.hyper_parameters["use_amp"]:
                 with autocast():
                     outputs = self.model(*model_input)
+                    # Make sure there are no NaN values introduced by loss
+                    # scaling.
+                    assert not np.isnan(outputs.cpu().detach().numpy()).any()
                     loss = self.criterion(outputs, targets)
-                # Backpropagate and optimise using AMP.
                 self.grad_scaler.scale(loss).backward()
                 self.grad_scaler.step(self.optimiser)
                 self.grad_scaler.update()
@@ -234,22 +210,9 @@ class Trainer:
 
             self.optimiser.step()
 
-            # Update the batch metrics.
-            if not np.isnan(outputs.cpu().detach().numpy()).any():
-                # Make sure there are no NaN values introduced by loss
-                # scaling.
-                auc_meter.update(targets, outputs)
-            else:
-                print("Encountered NaN in output. Not updating AUC metric.\n")
-            loss_meter.update(loss.detach().item())
-
-            targets, outputs = get_argmax_from_prediction_and_target(
-                targets, outputs
-            )
-
-            # Update the moving average metrics that will be logged in
-            # TensorBoard.
-            self.train_auc_metric.update(alaska_weighted_auc(targets, outputs))
+            # Update the metrics.
+            auc_meter.update(targets, outputs)
+            self.train_auc_metric.update(auc_meter.avg)
             self.train_loss_metric.update(loss.detach().item())
 
             # print(
@@ -274,14 +237,14 @@ class Trainer:
                     global_step=start_iter + batch_idx,
                 )
         print(
-            f"Train AUC: {auc_meter.avg}, " f"Train loss: {loss_meter.avg}\n"
+            f"Train AUC: {self.train_auc_metric.moving_average}, "
+            f"Train loss: {self.train_loss_metric.moving_average}\n"
         )
 
     def _valid_epoch(self, epoch: int) -> Tuple[float, float]:
         print("\nPerforming validation...")
         self.model.eval()
         auc_meter = WeightedAUCMeter()
-        loss_meter = BatchAverage()
 
         with torch.no_grad():
             for batch_idx, input_batch in tqdm(
@@ -294,6 +257,9 @@ class Trainer:
                 if self.hyper_parameters["use_amp"]:
                     with autocast():
                         outputs = self.model(*model_input)
+                        assert not np.isnan(
+                            outputs.cpu().detach().numpy()
+                        ).any()
                         loss = self.criterion(outputs, targets)
                 else:
                     with autocast(enabled=False):
@@ -301,56 +267,41 @@ class Trainer:
                         loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
-                if not np.isnan(outputs.cpu().detach().numpy()).any():
-                    # Make sure there are no NaN values introduced by loss
-                    # scaling.
-                    auc_meter.update(targets, outputs)
-                else:
-                    print(
-                        "Encountered NaN in output. Not updating AUC metric.\n")                loss_meter.update(loss.detach().item())
+                auc_meter.update(targets, outputs)
+                self.validation_loss_metric.update(loss.detach().item())
+                self.validation_auc_metric.update(auc_meter.avg)
 
                 gc.collect()
 
         print(
-            f"Validation AUC: {auc_meter.avg}, "
-            f"Validation loss: {loss_meter.avg}\n"
+            f"Validation AUC: {self.validation_auc_metric.moving_average}, "
+            f"Validation loss: {self.validation_loss_metric.moving_average}\n"
         )
         self.writer.add_scalar(
             tag="validation/loss",
-            scalar_value=loss_meter.avg,
+            scalar_value=self.validation_loss_metric.moving_average,
             global_step=epoch,
         )
         self.writer.add_scalar(
             tag="validation/weighted_auc",
-            scalar_value=auc_meter.avg,
+            scalar_value=self.validation_auc_metric.moving_average,
             global_step=epoch,
         )
 
         return (
             float(auc_meter.avg),
-            float(loss_meter.avg),
+            float(self.validation_loss_metric.moving_average),
         )
 
     def load_batch(self, input_batch):
-        if self.input_data_type in ["RGB", "YCbCr"]:
-            if self.use_quality_factor:
-                images = input_batch[0].to(self.main_device).float()
-                quality_factor = input_batch[1].to(self.main_device).float()
-                targets = input_batch[2].to(self.main_device).long()
-                model_input = (images, quality_factor)
-            else:
-                images = input_batch[0].to(self.main_device).float()
-                targets = input_batch[1].to(self.main_device).long()
-                model_input = (images,)
-        else:
-            # Load the DCT data.
-            images = (
-                input_batch[0].to(self.main_device).float(),
-                input_batch[1].to(self.main_device).float(),
-                input_batch[2].to(self.main_device).float(),
-            )
-            targets = input_batch[3].to(self.main_device).float()
-            model_input = images
+        # Load the DCT data.
+        images = (
+            input_batch[0].to(self.main_device).float(),
+            input_batch[1].to(self.main_device).float(),
+            input_batch[2].to(self.main_device).float(),
+        )
+        targets = input_batch[3].to(self.main_device).float()
+        model_input = images
         return model_input, targets
 
     def _save_checkpoint(self, epoch: float, filename: str) -> None:

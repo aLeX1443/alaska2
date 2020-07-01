@@ -13,7 +13,9 @@ from alaska2.alaska_pytorch.config import EXPERIMENT_HYPER_PARAMETERS
 @click.argument("experiment_number", type=int)
 @click.argument("mode", type=str)
 def main(experiment_number, mode):
-    initialise_torch(experiment_number)
+    hyper_parameters = EXPERIMENT_HYPER_PARAMETERS[experiment_number]
+
+    initialise_torch(hyper_parameters)
 
     # Add the imports here since we must set the CUDA_VISIBLE_DEVICES
     # environment variable before importing torch.
@@ -28,8 +30,7 @@ def main(experiment_number, mode):
         perform_inference(experiment_number=experiment_number,)
 
 
-def initialise_torch(experiment_number):
-    hyper_parameters = EXPERIMENT_HYPER_PARAMETERS[experiment_number]
+def initialise_torch(hyper_parameters):
 
     # Set which GPU will be visible (note: the code currently only supports
     # training with one GPU).

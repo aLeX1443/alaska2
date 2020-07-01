@@ -27,8 +27,7 @@ from alaska2.alaska_pytorch.lib.metrics import (
     MovingAverageMetric,
     WeightedAUCMeter,
     BatchAverage,
-    alaska_weighted_auc,
-    get_argmax_from_prediction_and_target,
+    top_k_accuracy,
 )
 
 
@@ -44,9 +43,7 @@ class Trainer:
         self.main_device = self.devices[0]
 
         # Build the model.
-        self.model = hyper_parameters["model"](
-            n_classes=hyper_parameters["n_classes"]
-        )
+        self.model = hyper_parameters["model"](n_classes=1000)
 
         # Distribute over all GPUs.
         self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
@@ -60,11 +57,6 @@ class Trainer:
         # Define a reusable loss criterion.
         self.criterion = LabelSmoothing().to(self.main_device)
 
-        # self.optimiser = torch.optim.AdamW(
-        #     filter(lambda x: x.requires_grad, self.model.parameters()),
-        #     lr=hyper_parameters["learning_rate"],
-        #     amsgrad=False,
-        # )
         self.optimiser = torch.optim.RMSprop(
             filter(lambda x: x.requires_grad, self.model.parameters()),
             lr=hyper_parameters["learning_rate"],
@@ -75,12 +67,13 @@ class Trainer:
         # to the largest value that does not cause NaNs in the model's output
         # due to FP16 overflow.
         if hyper_parameters["use_amp"]:
-            self.grad_scaler = GradScaler(
-                init_scale=2.0 ** 6,
-                growth_interval=np.iinfo(np.int64).max,
-                growth_factor=1.000001,
-                backoff_factor=0.999999,
-            )
+            # self.grad_scaler = GradScaler(
+            #     init_scale=2.0 ** 6,
+            #     growth_interval=np.iinfo(np.int64).max,
+            #     growth_factor=1.000001,
+            #     backoff_factor=0.999999,
+            # )
+            self.grad_scaler = GradScaler()
         else:
             self.grad_scaler = EmptyScaler()
 
@@ -89,19 +82,16 @@ class Trainer:
         # )
 
         # Define objects to keep track of smooth metrics.
+        # TODO add top-1 and top-5 metrics
         self.train_auc_metric = MovingAverageMetric(window_size=200)
+        self.train_top_1_acc_metric = MovingAverageMetric(window_size=200)
+        self.train_top_5_acc_metric = MovingAverageMetric(window_size=200)
         self.train_loss_metric = MovingAverageMetric(window_size=200)
-        # self.train_loss_metric = BatchAverage()
 
         self.model_checkpoint_dir = hyper_parameters["model_checkpoint_dir"]
         make_dir_if_not_exists(self.model_checkpoint_dir)
 
         self.hyper_parameters = hyper_parameters
-        self.input_data_type = hyper_parameters["input_data_type"]
-        self.use_quality_factor = hyper_parameters["use_quality_factor"]
-        self.separate_classes_by_quality_factor = hyper_parameters[
-            "separate_classes_by_quality_factor"
-        ]
         self.seed = hyper_parameters["seed"]
         self.epoch = 0
         self.model_name = hyper_parameters["model_name"]
@@ -127,27 +117,14 @@ class Trainer:
         # Check if we should continue training the model
         if hyper_parameters["trained_model_path"]:
             checkpoint = torch.load(hyper_parameters["trained_model_path"])
-            pre_trained_state_dict = checkpoint["state_dict"]
-            if (
-                "cifar10" in hyper_parameters["trained_model_path"]
-                or "imagenet"
-                in hyper_parameters["trained_model_path"]  # or True
-            ):
-                missing_keys = [
-                    "_fc.weight",
-                    "_fc.bias",
-                ]
-                for key in missing_keys:
-                    pre_trained_state_dict.pop(key)
-            else:
-                try:
-                    self.optimiser.load_state_dict(checkpoint["optimiser"])
-                except ValueError:
-                    pass
             self.model.module.load_state_dict(
-                pre_trained_state_dict, strict=False
+                checkpoint["state_dict"], strict=False
             )
             # self.scheduler.load_state_dict(checkpoint["scheduler"])
+            try:
+                self.optimiser.load_state_dict(checkpoint["optimiser"])
+            except ValueError:
+                pass
             self.start_epoch = checkpoint["epoch"] + 1
             try:
                 self.best_auc_epoch = checkpoint["best_auc_epoch"]
@@ -207,6 +184,8 @@ class Trainer:
         self.model.train()
         auc_meter = WeightedAUCMeter()
         loss_meter = BatchAverage()
+        top_1_acc_meter = BatchAverage()
+        top_5_acc_meter = BatchAverage()
 
         for batch_idx, input_batch in tqdm(
             enumerate(self.train_data_loader),
@@ -235,25 +214,33 @@ class Trainer:
             self.optimiser.step()
 
             # Update the batch metrics.
+            # top_1_acc = top_k_accuracy(targets, outputs, top_k=1)
+            # top_5_acc = top_k_accuracy(targets, outputs, top_k=5)
+            # Make sure there are no NaN values introduced by loss
+            # scaling.
             if not np.isnan(outputs.cpu().detach().numpy()).any():
-                # Make sure there are no NaN values introduced by loss
-                # scaling.
                 auc_meter.update(targets, outputs)
             else:
                 print("Encountered NaN in output. Not updating AUC metric.\n")
+            # top_1_acc_meter.update(top_1_acc)
+            # top_5_acc_meter.update(top_5_acc)
             loss_meter.update(loss.detach().item())
 
-            targets, outputs = get_argmax_from_prediction_and_target(
-                targets, outputs
-            )
+            # targets, outputs = get_argmax_from_prediction_and_target(
+            #     targets, outputs
+            # )
 
             # Update the moving average metrics that will be logged in
             # TensorBoard.
-            self.train_auc_metric.update(alaska_weighted_auc(targets, outputs))
+            self.train_auc_metric.update(auc_meter.avg)
+            # self.train_top_1_acc_metric.update(top_1_acc)
+            # self.train_top_5_acc_metric.update(top_5_acc)
             self.train_loss_metric.update(loss.detach().item())
 
             # print(
             #     f"Train AUC: {auc_meter.avg}, "
+            #     f"Train Top1 Accuracy: {top_1_acc}"
+            #     f"Train Top5 Accuracy: {top_5_acc}"
             #     f"Train loss: {loss.detach().item()}\n"
             # )
 
@@ -273,8 +260,20 @@ class Trainer:
                     scalar_value=self.train_auc_metric.moving_average,
                     global_step=start_iter + batch_idx,
                 )
+                # self.writer.add_scalar(
+                #     tag="train/top_1_acc",
+                #     scalar_value=self.train_top_1_acc_metric.moving_average,
+                #     global_step=start_iter + batch_idx,
+                # )
+                # self.writer.add_scalar(
+                #     tag="train/top_5_acc",
+                #     scalar_value=self.train_top_1_acc_metric.moving_average,
+                #     global_step=start_iter + batch_idx,
+                # )
         print(
-            f"Train AUC: {auc_meter.avg}, " f"Train loss: {loss_meter.avg}\n"
+            f"Train metrics: "
+            f"AUC: {auc_meter.avg}, "
+            f"Loss: {loss_meter.avg}\n"
         )
 
     def _valid_epoch(self, epoch: int) -> Tuple[float, float]:
@@ -282,6 +281,8 @@ class Trainer:
         self.model.eval()
         auc_meter = WeightedAUCMeter()
         loss_meter = BatchAverage()
+        top_1_acc_meter = BatchAverage()
+        top_5_acc_meter = BatchAverage()
 
         with torch.no_grad():
             for batch_idx, input_batch in tqdm(
@@ -306,8 +307,14 @@ class Trainer:
                     # scaling.
                     auc_meter.update(targets, outputs)
                 else:
-                    print(
-                        "Encountered NaN in output. Not updating AUC metric.\n")                loss_meter.update(loss.detach().item())
+                    print("Encountered NaN in output. Not updating AUC metric.\n")
+                loss_meter.update(loss.detach().item())
+                # top_1_acc_meter.update(
+                #     top_k_accuracy(targets, outputs, top_k=1)
+                # )
+                # top_5_acc_meter.update(
+                #     top_k_accuracy(targets, outputs, top_k=5)
+                # )
 
                 gc.collect()
 
@@ -325,6 +332,16 @@ class Trainer:
             scalar_value=auc_meter.avg,
             global_step=epoch,
         )
+        # self.writer.add_scalar(
+        #     tag="validation/top_1_acc",
+        #     scalar_value=top_1_acc_meter.avg,
+        #     global_step=epoch,
+        # )
+        # self.writer.add_scalar(
+        #     tag="validation/top_5_acc",
+        #     scalar_value=top_5_acc_meter.avg,
+        #     global_step=epoch,
+        # )
 
         return (
             float(auc_meter.avg),
@@ -332,25 +349,14 @@ class Trainer:
         )
 
     def load_batch(self, input_batch):
-        if self.input_data_type in ["RGB", "YCbCr"]:
-            if self.use_quality_factor:
-                images = input_batch[0].to(self.main_device).float()
-                quality_factor = input_batch[1].to(self.main_device).float()
-                targets = input_batch[2].to(self.main_device).long()
-                model_input = (images, quality_factor)
-            else:
-                images = input_batch[0].to(self.main_device).float()
-                targets = input_batch[1].to(self.main_device).long()
-                model_input = (images,)
-        else:
-            # Load the DCT data.
-            images = (
-                input_batch[0].to(self.main_device).float(),
-                input_batch[1].to(self.main_device).float(),
-                input_batch[2].to(self.main_device).float(),
-            )
-            targets = input_batch[3].to(self.main_device).float()
-            model_input = images
+        # Load the DCT data.
+        images = (
+            input_batch[0].to(self.main_device).float(),
+            input_batch[1].to(self.main_device).float(),
+            input_batch[2].to(self.main_device).float(),
+        )
+        targets = input_batch[3].to(self.main_device).float()
+        model_input = images
         return model_input, targets
 
     def _save_checkpoint(self, epoch: float, filename: str) -> None:

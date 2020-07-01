@@ -1,5 +1,4 @@
 import os
-import time
 from typing import Dict, Sequence, Optional, Tuple, Union
 import cv2
 import glob
@@ -27,6 +26,9 @@ from alaska2.lib.data_loaders import (
     dct_from_jpeg,
     dct_from_jpeg_imageio,
     jpeg_decompress_ycbcr,
+)
+from imagenet.lib.data_loaders import (
+    load_dct_values_from_pre_processed_imagenet_image,
 )
 
 
@@ -59,17 +61,17 @@ def make_train_and_validation_data_loaders(
     elif input_data_type == "DCT":
         data_set_class = DCTDataSet
         # Define a set of image augmentations.
-        augmentations_train = Compose([VerticalFlip(p=0), HorizontalFlip(p=1)], p=1,)
-        augmentations_validation = Compose([], p=1)
-        # augmentations_train = None
-        # augmentations_validation = None
+        # augmentations_train = Compose([VerticalFlip(p=0), HorizontalFlip(p=1)], p=1,)
+        # augmentations_validation = Compose([], p=1)
+        augmentations_train = None
+        augmentations_validation = None
     else:
         raise ValueError(
             f"Invalid input data type provided: {input_data_type}"
         )
 
     # Load a DataFrame with the files and targets.
-    data_set = load_data()
+    data_set = load_data(n_classes=hyper_parameters["n_classes"])
 
     # Split the data set into folds.
     data_set = add_fold_to_data_set(data_set)
@@ -83,6 +85,7 @@ def make_train_and_validation_data_loaders(
         labels=data_set[
             data_set["fold"] != validation_fold_number
         ].label.values,
+        n_classes=hyper_parameters["n_classes"],
         transforms=augmentations_train,
         colour_space=input_data_type,
         use_quality_factor=hyper_parameters["use_quality_factor"],
@@ -98,6 +101,7 @@ def make_train_and_validation_data_loaders(
         labels=data_set[
             data_set["fold"] == validation_fold_number
         ].label.values,
+        n_classes=hyper_parameters["n_classes"],
         transforms=augmentations_validation,
         colour_space=input_data_type,
         use_quality_factor=hyper_parameters["use_quality_factor"],
@@ -136,6 +140,7 @@ class ColourDataSet(Dataset):
         kinds: Sequence[str],
         image_names: Sequence[str],
         labels: Sequence[int],
+        n_classes: int = 4,
         transforms: Optional[Compose] = None,
         colour_space: str = "RGB",
         use_quality_factor: bool = False,
@@ -145,6 +150,7 @@ class ColourDataSet(Dataset):
         self.kinds = kinds
         self.image_names = image_names
         self.labels = labels
+        self.n_classes = n_classes
         self.transforms = transforms
         self.colour_space = colour_space
         self.use_quality_factor = use_quality_factor
@@ -186,7 +192,7 @@ class ColourDataSet(Dataset):
             sample = self.transforms(**sample)
             image = sample["image"]
 
-        target = one_hot(4, label)
+        target = one_hot(self.n_classes, label)
 
         if self.use_quality_factor:
             if self.separate_classes_by_quality_factor:
@@ -223,6 +229,7 @@ class DCTDataSet(Dataset):
         kinds: Sequence[str],
         image_names: Sequence[str],
         labels: Sequence[int],
+        n_classes: int = 4,
         transforms: Optional[Compose] = None,
         colour_space: str = "DCT",
         use_quality_factor: bool = False,
@@ -232,6 +239,7 @@ class DCTDataSet(Dataset):
         self.kinds = kinds
         self.image_names = image_names
         self.labels = labels
+        self.n_classes = n_classes
         self.transforms = transforms
 
     def __len__(self) -> int:
@@ -246,39 +254,30 @@ class DCTDataSet(Dataset):
             self.labels[index],
         )
 
-        # TODO perform transform on the raw image, save in tmp directory and
-        #  load DCT coefficients.
+        (
+            dct_y,
+            dct_cb,
+            dct_cr,
+        ) = load_dct_values_from_pre_processed_imagenet_image(
+            f"data/{kind}/{image_name}"
+        )
 
         # dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
         #     f"data/{kind}/{image_name}"
         # )
-        arrays = np.load(f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}")
-        dct_y, dct_cb, dct_cr = (
-            arrays["arr_0"],
-            arrays["arr_1"],
-            arrays["arr_2"],
-        )
 
-        print(dct_y[0][0])
+        # arrays = np.load(
+        #     f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}"
+        # )
+        # dct_y, dct_cb, dct_cr = (
+        #     arrays["arr_0"],
+        #     arrays["arr_1"],
+        #     arrays["arr_2"],
+        # )
 
         dct_y = dct_y.astype(np.float32)
         dct_cb = dct_cb.astype(np.float32)
         dct_cr = dct_cr.astype(np.float32)
-
-        if self.transforms:
-            sample = {"image": dct_y}
-            sample = self.transforms(**sample)
-            dct_y = sample["image"]
-            sample = {"image": dct_cb}
-            sample = self.transforms(**sample)
-            dct_cb = sample["image"]
-            sample = {"image": dct_cr}
-            sample = self.transforms(**sample)
-            dct_cr = sample["image"]
-
-        print(dct_y[0][0])
-        import time
-        time.sleep(1000)
 
         dct_y = np.rollaxis(dct_y, 2, 0)
         dct_cb = np.rollaxis(dct_cb, 2, 0)
@@ -288,7 +287,7 @@ class DCTDataSet(Dataset):
         dct_cb = dct_cb / 1024
         dct_cr = dct_cr / 1024
 
-        target = one_hot(4, label)
+        target = one_hot(self.n_classes, label)
 
         return dct_y, dct_cb, dct_cr, target
 
