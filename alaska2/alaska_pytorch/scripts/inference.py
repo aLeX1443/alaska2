@@ -1,8 +1,16 @@
 import cv2
 import glob
+
+import functools
 import numpy as np
 import pandas as pd
-from albumentations import Compose, Normalize
+from albumentations import (
+    Compose,
+    Normalize,
+    VerticalFlip,
+    HorizontalFlip,
+    RandomRotate90,
+)
 from albumentations.pytorch import ToTensorV2
 
 import torch
@@ -24,8 +32,6 @@ def perform_inference(experiment_number: int) -> None:
     hyper_parameters = EXPERIMENT_HYPER_PARAMETERS[experiment_number]
     input_data_type = hyper_parameters["input_data_type"]
 
-    data_loader = get_test_data_loader(hyper_parameters)
-
     # device = "cpu"
     device = "cuda:0"
 
@@ -46,38 +52,58 @@ def perform_inference(experiment_number: int) -> None:
         # Create a runner to handle the inference loop.
         # runner = SupervisedRunner(device=device)
 
-        results = {"Id": [], "Label": []}
+        all_submissions = []
+        n_runs = 10
 
-        # Perform inference.
-        for image_names, input_data in tqdm(
-            data_loader, total=len(data_loader),
-        ):
-            if hyper_parameters["use_quality_factor"]:
-                prediction = model(
-                    input_data[0].to(device), input_data[1].to(device)
+        # Implement TTA
+        for run in tqdm(range(n_runs)):
+            results = {"Id": [], f"Label_{run}": []}
+            data_loader = get_test_data_loader(hyper_parameters)
+
+            # Perform inference.
+            for image_names, input_data in tqdm(
+                data_loader, total=len(data_loader),
+            ):
+                if hyper_parameters["use_quality_factor"]:
+                    prediction = model(
+                        input_data[0].to(device), input_data[1].to(device)
+                    )
+                elif input_data_type == "DCT":
+                    prediction = model(
+                        input_data[0].to(device),
+                        input_data[1].to(device),
+                        input_data[2].to(device),
+                    )
+                else:
+                    prediction = model(input_data[0].to(device))
+                prediction = (
+                    1
+                    - nn.functional.softmax(prediction, dim=1)
+                    .data.cpu()
+                    .numpy()[:, 0]
                 )
-            elif input_data_type == "DCT":
-                prediction = model(
-                    input_data[0].to(device),
-                    input_data[1].to(device),
-                    input_data[2].to(device),
-                )
-            else:
-                prediction = model(input_data[0].to(device))
-            prediction = (
-                1
-                - nn.functional.softmax(prediction, dim=1)
-                .data.cpu()
-                .numpy()[:, 0]
-            )
-            results["Id"].extend(image_names)
-            results["Label"].extend(prediction)
+                results["Id"].extend(image_names)
+                results[f"Label_{run}"].extend(prediction)
 
-    submission = pd.DataFrame(results)
+            submission = pd.DataFrame(results)
+            all_submissions.append(submission)
 
-    print(submission)
+    # Merge all submissions into one data frame
+    all_submissions_df = functools.reduce(
+        lambda left, right: pd.merge(left, right, on=["Id"], how="outer"),
+        all_submissions,
+    )
 
-    submission.to_csv("submissions/submission.csv", index=False)
+    # Take the average of the labels
+    individual_labels = [f"Label_{i}" for i in range(n_runs)]
+    all_submissions_df["Label"] = all_submissions_df[individual_labels].mean(
+        axis=1
+    )
+    print(all_submissions_df)
+
+    # Drop the other labels and save the submission
+    all_submissions_df.drop(individual_labels, axis=1, inplace=True)
+    all_submissions_df.to_csv("submissions/submission.csv", index=False)
 
 
 def get_test_data_loader(hyper_parameters: dict) -> DataLoader:
@@ -87,7 +113,16 @@ def get_test_data_loader(hyper_parameters: dict) -> DataLoader:
     input_data_type = hyper_parameters["input_data_type"]
 
     if input_data_type == "RGB":
-        augmentations_test = Compose([Normalize(p=1), ToTensorV2()], p=1)
+        augmentations_test = Compose(
+            [
+                VerticalFlip(p=0.5),
+                HorizontalFlip(p=0.5),
+                RandomRotate90(p=0.5),
+                Normalize(p=1),
+                ToTensorV2(),
+            ],
+            p=1,
+        )
         data_set_class = Alaska2TestColourDataset
     elif input_data_type == "YCbCr":
         augmentations_test = Compose([ToTensorV2()], p=1)

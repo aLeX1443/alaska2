@@ -82,11 +82,7 @@ class DCTEfficientNet(nn.Module):
             num_features=out_channels, momentum=bn_mom, eps=bn_eps
         )
 
-        # Final linear layer
-        self._avg_pooling = nn.AdaptiveAvgPool2d(1)
-        self._dropout = nn.Dropout(self._global_params.dropout_rate)
-        self._fc = nn.Linear(out_channels, self._global_params.num_classes)
-        # self._fc = nn.Linear(int(out_channels * 3), self._global_params.num_classes)
+        # Define the activation function
         self._swish = MemoryEfficientSwish()
 
     def set_swish(self, memory_efficient=True):
@@ -356,46 +352,40 @@ class DCTMultipleInputEfficientNet(nn.Module):
         super().__init__()
         # Make separate models so we don't share weights
         # self.dct_y_efficientnet = DCTEfficientNet.from_pretrained(
-        #     model_name=model_name, num_classes=4
+        #     model_name=model_name, num_classes=num_classes
         # )
         # self.dct_cb_efficientnet = DCTEfficientNet.from_pretrained(
-        #     model_name=model_name, num_classes=4
+        #     model_name=model_name, num_classes=num_classes
         # )
         # self.dct_cr_efficientnet = DCTEfficientNet.from_pretrained(
-        #     model_name=model_name, num_classes=4
+        #     model_name=model_name, num_classes=num_classes
         # )
-
         self.dct_y_efficientnet = DCTEfficientNet.from_name(
-            model_name=model_name,
+            model_name=model_name, override_params={"num_classes": num_classes}
         )
         self.dct_cb_efficientnet = DCTEfficientNet.from_name(
-            model_name=model_name,
+            model_name=model_name, override_params={"num_classes": num_classes}
         )
         self.dct_cr_efficientnet = DCTEfficientNet.from_name(
-            model_name=model_name,
+            model_name=model_name, override_params={"num_classes": num_classes}
         )
 
-        # self.dct_y_efficientnet = CustomEfficientNetB3.from_pretrained(
-        #     model_name=model_name, num_classes=4
-        # )
-        # self.dct_cb_efficientnet = CustomEfficientNetB3.from_pretrained(
-        #     model_name=model_name, num_classes=4
-        # )
-        # self.dct_cr_efficientnet = CustomEfficientNetB3.from_pretrained(
-        #     model_name=model_name, num_classes=4
-        # )
         self._avg_pooling = nn.AdaptiveAvgPool2d(1)
-        self._dropout = nn.Dropout(0.2)
+        self._dropout = nn.Dropout(0.5)
         out_channels = round_filters(
             1280, self.dct_y_efficientnet._global_params
         )
         self._fc = nn.Linear(int(out_channels * 3), num_classes)
 
-    @autocast()
+        self.relu = nn.ReLU(inplace=True)
+        self.l1 = nn.Linear(128, 1024)
+        self.l2 = nn.Linear(1024, 19)
+
+    # @autocast()
     def forward(
         self, dct_y: torch.tensor, dct_cb: torch.tensor, dct_cr: torch.tensor
     ) -> torch.tensor:
-        bs = dct_y.size(0)
+        batch_dimension = dct_y.size(0)
 
         # Convolution layers
         x_dct_y = self.dct_y_efficientnet.extract_features(dct_y)
@@ -408,11 +398,22 @@ class DCTMultipleInputEfficientNet(nn.Module):
         x_dct_cr = self._avg_pooling(x_dct_cr)
 
         # Flatten
-        x_dct_y = x_dct_y.view(bs, -1)
-        x_dct_cb = x_dct_cb.view(bs, -1)
-        x_dct_cr = x_dct_cr.view(bs, -1)
+        x_dct_y = x_dct_y.view(batch_dimension, -1)
+        x_dct_cb = x_dct_cb.view(batch_dimension, -1)
+        x_dct_cr = x_dct_cr.view(batch_dimension, -1)
 
         x = torch.cat((x_dct_y, x_dct_cb, x_dct_cr), dim=1)
+
+        x = self._dropout(x)
+
+        # TODO test MLP
+        # x = self.l1(x)
+        # x = self.relu(x)
+        # x = self.l2(x)
+        # # Make sure the final linear layer is in FP32
+        # with autocast(enabled=False):
+        #     x = x.float()
+        #     x = self.l2(x)
 
         # Make sure the final linear layer is in FP32
         with autocast(enabled=False):

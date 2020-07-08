@@ -7,6 +7,8 @@ def blend_submissions() -> None:
     submissions_path = "submissions/"
 
     submissions_to_blend = [
+        "rgb_efficientnet_b4_tta_lb_0_927_submission.csv",
+        # "rgb_efficientnet_b2_tta_lb_0_913_submission.csv",
         "rgb_efficientnet_b3_lb_0_931_submission.csv",
         "rgb_efficientnet_b3_lb_0_932_submission.csv",
         "rgb_efficientnet_b5_lb_0_912_submission.csv",
