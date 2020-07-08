@@ -48,6 +48,9 @@ class Trainer:
             n_classes=hyper_parameters["n_classes"]
         )
 
+        # Synchronise Batch Normalisation across devices.
+        # self.model = nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+
         # Distribute over all GPUs.
         self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
             self.main_device
@@ -60,11 +63,6 @@ class Trainer:
         # Define a reusable loss criterion.
         self.criterion = LabelSmoothing().to(self.main_device)
 
-        # self.optimiser = torch.optim.AdamW(
-        #     filter(lambda x: x.requires_grad, self.model.parameters()),
-        #     lr=hyper_parameters["learning_rate"],
-        #     amsgrad=False,
-        # )
         self.optimiser = torch.optim.RMSprop(
             filter(lambda x: x.requires_grad, self.model.parameters()),
             lr=hyper_parameters["learning_rate"],
@@ -74,9 +72,13 @@ class Trainer:
         # Note: the default value for init_scale is 2.0**16. This should be set
         # to the largest value that does not cause NaNs in the model's output
         # due to FP16 overflow.
+        if hyper_parameters["input_data_type"] in ["RGB", "YCbCr"]:
+            init_scale = 2.0 ** 11
+        else:
+            init_scale = 2.0 ** 6
         if hyper_parameters["use_amp"]:
             self.grad_scaler = GradScaler(
-                init_scale=2.0 ** 6,
+                init_scale=init_scale,
                 growth_interval=np.iinfo(np.int64).max,
                 growth_factor=1.000001,
                 backoff_factor=0.999999,
@@ -84,14 +86,13 @@ class Trainer:
         else:
             self.grad_scaler = EmptyScaler()
 
-        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        #     self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
-        # )
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
+        )
 
         # Define objects to keep track of smooth metrics.
         self.train_auc_metric = MovingAverageMetric(window_size=200)
         self.train_loss_metric = MovingAverageMetric(window_size=200)
-        # self.train_loss_metric = BatchAverage()
 
         self.model_checkpoint_dir = hyper_parameters["model_checkpoint_dir"]
         make_dir_if_not_exists(self.model_checkpoint_dir)
@@ -158,6 +159,7 @@ class Trainer:
             self.best_val_loss = checkpoint["best_val_loss"]
             print(f"Loaded weights and continuing to train model.")
 
+        make_dir_if_not_exists(hyper_parameters['tensorboard_log_dir'])
         self.writer = SummaryWriter(
             logdir=f"{hyper_parameters['tensorboard_log_dir']}/{self.training_run_name}/"
         )
@@ -174,8 +176,8 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.n_epochs + 1):
             self.epoch = epoch
-            # lr = self.scheduler.get_last_lr()
-            lr = self.hyper_parameters["learning_rate"]
+            lr = self.scheduler.get_last_lr()
+            # lr = self.hyper_parameters["learning_rate"]
             print(f" Epoch: {epoch}, LR: {lr}")
 
             self._train_epoch(epoch=epoch)
@@ -183,7 +185,7 @@ class Trainer:
             self._save_checkpoint(
                 epoch=epoch, filename=self.training_run_name + "_checkpoint"
             )
-            # self.scheduler.step()
+            self.scheduler.step()
 
             with torch.no_grad():
                 validation_auc, validation_loss = self._valid_epoch(epoch)
@@ -226,11 +228,10 @@ class Trainer:
                 self.grad_scaler.step(self.optimiser)
                 self.grad_scaler.update()
             else:
-                with autocast(enabled=False):
-                    outputs = self.model(*model_input)
-                    loss = self.criterion(outputs, targets)
-                    # Backpropagate.
-                    loss.backward()
+                outputs = self.model(*model_input)
+                loss = self.criterion(outputs, targets)
+                # Backpropagate.
+                loss.backward()
 
             self.optimiser.step()
 
@@ -240,16 +241,19 @@ class Trainer:
                 # scaling.
                 auc_meter.update(targets, outputs)
             else:
+                print("GradScaler scale:", self.grad_scaler.get_scale())
                 print("Encountered NaN in output. Not updating AUC metric.\n")
+                print(outputs)
             loss_meter.update(loss.detach().item())
 
-            targets, outputs = get_argmax_from_prediction_and_target(
-                targets, outputs
-            )
+            # targets, outputs = get_argmax_from_prediction_and_target(
+            #     targets, outputs
+            # )
 
             # Update the moving average metrics that will be logged in
             # TensorBoard.
-            self.train_auc_metric.update(alaska_weighted_auc(targets, outputs))
+            # self.train_auc_metric.update(alaska_weighted_auc(targets, outputs))
+            self.train_auc_metric.update(auc_meter.avg)
             self.train_loss_metric.update(loss.detach().item())
 
             # print(
@@ -307,8 +311,9 @@ class Trainer:
                     auc_meter.update(targets, outputs)
                 else:
                     print(
-                        "Encountered NaN in output. Not updating AUC metric.\n")                loss_meter.update(loss.detach().item())
-
+                        "Encountered NaN in output. Not updating AUC metric.\n"
+                    )
+                loss_meter.update(loss.detach().item())
                 gc.collect()
 
         print(

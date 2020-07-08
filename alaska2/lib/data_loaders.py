@@ -12,7 +12,7 @@ import jpegio
 try:
     from jpeg2dct.numpy import load as load_dct
 except ImportError:
-    print("Could not load Uber DCT library")
+    pass
 
 from sklearn.model_selection import GroupKFold
 from sklearn.utils import class_weight
@@ -27,7 +27,7 @@ def load_data(n_classes=4) -> pd.DataFrame:
                 label = 0
             else:
                 label = 1
-        for path in glob.glob1("/alaska2/data/Cover/", "*.jpg"):
+        for path in glob.glob1("data/Cover/", "*.jpg"):
             data_set.append(
                 {
                     "kind": kind,

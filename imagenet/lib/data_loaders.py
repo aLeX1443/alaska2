@@ -145,7 +145,8 @@ class DCTDataSet(Dataset):
             ) = load_dct_values_from_pre_processed_imagenet_image(
                 file, self.is_training
             )
-        except TypeError:
+        except Exception as e:
+            print(e)
             return None
 
         dct_y = dct_y.astype(np.float32)

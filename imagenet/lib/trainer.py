@@ -218,7 +218,7 @@ class Trainer:
             # top_5_acc = top_k_accuracy(targets, outputs, top_k=5)
             # Make sure there are no NaN values introduced by loss
             # scaling.
-            if not np.isnan(outputs.cpu().detach().numpy()).any():
+            if not np.isnan(outputs.cpu().numpy()).any():
                 auc_meter.update(targets, outputs)
             else:
                 print("Encountered NaN in output. Not updating AUC metric.\n")
@@ -302,12 +302,14 @@ class Trainer:
                         loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
-                if not np.isnan(outputs.cpu().detach().numpy()).any():
+                if not np.isnan(outputs.cpu().numpy()).any():
                     # Make sure there are no NaN values introduced by loss
                     # scaling.
                     auc_meter.update(targets, outputs)
                 else:
-                    print("Encountered NaN in output. Not updating AUC metric.\n")
+                    print(
+                        "Encountered NaN in output. Not updating AUC metric.\n"
+                    )
                 loss_meter.update(loss.detach().item())
                 # top_1_acc_meter.update(
                 #     top_k_accuracy(targets, outputs, top_k=1)

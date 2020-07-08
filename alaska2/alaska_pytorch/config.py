@@ -116,18 +116,18 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "n_classes": 4,  # 2
         "use_quality_factor": False,
         "separate_classes_by_quality_factor": False,
-        "use_amp": True,
-        "devices": [0, 1],
+        "use_amp": False,
+        "devices": [0, 1],  # [0, 1]
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": "imagenet/checkpoints/dct_efficientnet_b7_no_weight_sharing_1593550498_checkpoint.pth",
+        "trained_model_path": None,  # "imagenet/checkpoints/dct_efficientnet_b7_no_weight_sharing_1593550498_checkpoint.pth",
         # Training loop:
-        "batch_size": 128,
+        "batch_size": 16,  # 128,
         "n_epochs": 1000,
         "learning_rate": 0.0002,
         "lr_scheduler_exp_gamma": 0.95,
-        "training_workers": 20,
+        "training_workers": 5,  # 20
         # Other:
         "model_checkpoint_dir": MODELS_SAVE_DIR,
         "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
@@ -241,7 +241,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b3_1592261292_checkpoint.pth",
+        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b3_1592261292_best_auc_checkpoint.pth",
         # Training loop:
         "batch_size": 48,
         "n_epochs": 1000,
@@ -289,7 +289,7 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": None,
+        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b2_1593697486_best_auc_checkpoint.pth",
         # Training loop:
         "batch_size": 32,
         "n_epochs": 1000,
@@ -302,23 +302,71 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "log_tensorboard_n_times_per_epoch": 100,
     },
     12: {
-        "model_name": "rgb_efficientnet_b2",
-        "model": build_efficientnet_b2,
+        "model_name": "rgb_qf_input_efficientnet_b2",
+        "model": build_quality_factor_efficientnet_b2,
         "input_data_type": "RGB",
         "n_classes": 4,  # 2
-        "use_quality_factor": False,
+        "use_quality_factor": True,
         "separate_classes_by_quality_factor": False,
         "use_amp": True,
         "devices": [0, 1],
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_efficientnet_b2_1592757042_checkpoint.pth",
+        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b2_1593717342_best_auc_checkpoint.pth",
         # Training loop:
-        "batch_size": 64,
+        "batch_size": 128,
         "n_epochs": 1000,
-        "learning_rate": 0.0002,
+        "learning_rate": 0.0001,
+        "lr_scheduler_exp_gamma": 0.96,
+        "training_workers": 10,
+        # Other:
+        "model_checkpoint_dir": MODELS_SAVE_DIR,
+        "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
+        "log_tensorboard_n_times_per_epoch": 100,
+    },
+    13: {
+        "model_name": "rgb_qf_input_efficientnet_b4",
+        "model": build_quality_factor_efficientnet_b4,
+        "input_data_type": "RGB",
+        "n_classes": 4,  # 2
+        "use_quality_factor": True,
+        "separate_classes_by_quality_factor": False,
+        "use_amp": False,
+        "devices": [0, 1],
+        "seed": 2020,
+        "validation_split": 0.2,
+        # Model parameters:
+        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b4_1594044310_best_auc_checkpoint.pth",
+        # Training loop:
+        "batch_size": 72,
+        "n_epochs": 1000,
+        "learning_rate": 0.0001,
         "lr_scheduler_exp_gamma": 0.95,
+        "training_workers": 10,
+        # Other:
+        "model_checkpoint_dir": MODELS_SAVE_DIR,
+        "tensorboard_log_dir": TENSORBOARD_LOGS_DIR,
+        "log_tensorboard_n_times_per_epoch": 100,
+    },
+    14: {
+        "model_name": "rgb_qf_input_efficientnet_b6",
+        "model": build_quality_factor_efficientnet_b6,
+        "input_data_type": "RGB",
+        "n_classes": 4,  # 2
+        "use_quality_factor": True,
+        "separate_classes_by_quality_factor": False,
+        "use_amp": True,
+        "devices": [0, 1],
+        "seed": 2020,
+        "validation_split": 0.2,
+        # Model parameters:
+        "trained_model_path": None,
+        # Training loop:
+        "batch_size": 40,
+        "n_epochs": 1000,
+        "learning_rate": 0.0003,
+        "lr_scheduler_exp_gamma": 0.97,
         "training_workers": 10,
         # Other:
         "model_checkpoint_dir": MODELS_SAVE_DIR,

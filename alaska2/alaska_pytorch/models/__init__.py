@@ -14,7 +14,9 @@ from alaska2.alaska_pytorch.models.colour.efficientnet import (
 from alaska2.alaska_pytorch.models.colour.efficientnet import (
     build_quality_factor_efficientnet_b3,
     build_quality_factor_efficientnet_b2,
+    build_quality_factor_efficientnet_b4,
     build_quality_factor_efficientnet_b5,
+    build_quality_factor_efficientnet_b6,
 )
 
 

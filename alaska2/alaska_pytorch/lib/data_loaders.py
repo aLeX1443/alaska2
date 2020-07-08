@@ -16,6 +16,7 @@ from albumentations import (
     Compose,
     HorizontalFlip,
     VerticalFlip,
+    RandomRotate90,
     Normalize,
 )
 from tqdm import tqdm
@@ -23,12 +24,8 @@ from tqdm import tqdm
 from alaska2.lib.data_loaders import (
     load_data,
     add_fold_to_data_set,
-    dct_from_jpeg,
     dct_from_jpeg_imageio,
     jpeg_decompress_ycbcr,
-)
-from imagenet.lib.data_loaders import (
-    load_dct_values_from_pre_processed_imagenet_image,
 )
 
 
@@ -43,6 +40,7 @@ def make_train_and_validation_data_loaders(
             [
                 VerticalFlip(p=0.5),
                 HorizontalFlip(p=0.5),
+                RandomRotate90(p=0.5),
                 Normalize(p=1),
                 ToTensorV2(),
             ],
@@ -53,7 +51,13 @@ def make_train_and_validation_data_loaders(
         data_set_class = ColourDataSet
         # Define a set of image augmentations.
         augmentations_train = Compose(
-            [VerticalFlip(p=0.5), HorizontalFlip(p=0.5), ToTensorV2()], p=1,
+            [
+                VerticalFlip(p=0.5),
+                HorizontalFlip(p=0.5),
+                RandomRotate90(p=0.5),
+                ToTensorV2(),
+            ],
+            p=1,
         )
         augmentations_validation = Compose([ToTensorV2()], p=1)
         # augmentations_train = None
@@ -254,26 +258,9 @@ class DCTDataSet(Dataset):
             self.labels[index],
         )
 
-        (
-            dct_y,
-            dct_cb,
-            dct_cr,
-        ) = load_dct_values_from_pre_processed_imagenet_image(
+        dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
             f"data/{kind}/{image_name}"
         )
-
-        # dct_y, dct_cb, dct_cr = dct_from_jpeg_imageio(
-        #     f"data/{kind}/{image_name}"
-        # )
-
-        # arrays = np.load(
-        #     f"data/dct/{kind}/{image_name.replace('.jpg', '.npz')}"
-        # )
-        # dct_y, dct_cb, dct_cr = (
-        #     arrays["arr_0"],
-        #     arrays["arr_1"],
-        #     arrays["arr_2"],
-        # )
 
         dct_y = dct_y.astype(np.float32)
         dct_cb = dct_cb.astype(np.float32)
