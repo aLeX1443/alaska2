@@ -1,6 +1,8 @@
 from typing import Dict, Tuple
 import gc
 import os
+
+import apex as apex
 import numpy as np
 import time
 from tensorboardX import SummaryWriter
@@ -10,6 +12,9 @@ import torch.optim
 import torch.cuda
 import torch.distributed
 from torch import nn
+
+from apex import amp
+from apex.parallel import DistributedDataParallel
 
 try:
     from torch.cuda.amp import GradScaler, autocast
@@ -48,13 +53,8 @@ class Trainer:
             n_classes=hyper_parameters["n_classes"]
         )
 
-        # Synchronise Batch Normalisation across devices.
-        # self.model = nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
-
-        # Distribute over all GPUs.
-        self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
-            self.main_device
-        )
+        # self.model = apex.parallel.convert_syncbn_model(self.model)
+        self.model = self.model.cuda()
 
         hyper_parameters["batch_size"] = (
             int(len(self.devices)) * hyper_parameters["batch_size"]
@@ -68,27 +68,22 @@ class Trainer:
             lr=hyper_parameters["learning_rate"],
         )
 
-        # Create a gradient scaler for Automatic Mixed Precision (AMP).
-        # Note: the default value for init_scale is 2.0**16. This should be set
-        # to the largest value that does not cause NaNs in the model's output
-        # due to FP16 overflow.
-        if hyper_parameters["input_data_type"] in ["RGB", "YCbCr"]:
-            init_scale = 2.0 ** 11
-        else:
-            init_scale = 2.0 ** 6
-        if hyper_parameters["use_amp"]:
-            self.grad_scaler = GradScaler(
-                init_scale=init_scale,
-                growth_interval=np.iinfo(np.int64).max,
-                growth_factor=1.000001,
-                backoff_factor=0.999999,
-            )
-        else:
-            self.grad_scaler = EmptyScaler()
-
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
+        # Enable Automatic Mixed Precision (AMP).
+        self.model, self.optimiser = amp.initialize(
+            self.model, self.optimiser, opt_level="O1"
         )
+
+        # Synchronise Batch Normalisation across devices.
+        # self.model = nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
+
+        # Distribute over all GPUs.
+        self.model = nn.DataParallel(self.model, device_ids=self.devices).to(
+            self.main_device
+        )
+
+        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+        #     self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
+        # )
 
         # Define objects to keep track of smooth metrics.
         self.train_auc_metric = MovingAverageMetric(window_size=200)
@@ -159,7 +154,7 @@ class Trainer:
             self.best_val_loss = checkpoint["best_val_loss"]
             print(f"Loaded weights and continuing to train model.")
 
-        make_dir_if_not_exists(hyper_parameters['tensorboard_log_dir'])
+        make_dir_if_not_exists(hyper_parameters["tensorboard_log_dir"])
         self.writer = SummaryWriter(
             logdir=f"{hyper_parameters['tensorboard_log_dir']}/{self.training_run_name}/"
         )
@@ -176,8 +171,8 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.n_epochs + 1):
             self.epoch = epoch
-            lr = self.scheduler.get_last_lr()
-            # lr = self.hyper_parameters["learning_rate"]
+            # lr = self.scheduler.get_last_lr()
+            lr = self.hyper_parameters["learning_rate"]
             print(f" Epoch: {epoch}, LR: {lr}")
 
             self._train_epoch(epoch=epoch)
@@ -185,7 +180,7 @@ class Trainer:
             self._save_checkpoint(
                 epoch=epoch, filename=self.training_run_name + "_checkpoint"
             )
-            self.scheduler.step()
+            # self.scheduler.step()
 
             with torch.no_grad():
                 validation_auc, validation_loss = self._valid_epoch(epoch)
@@ -219,19 +214,10 @@ class Trainer:
 
             self.optimiser.zero_grad()
 
-            if self.hyper_parameters["use_amp"]:
-                with autocast():
-                    outputs = self.model(*model_input)
-                    loss = self.criterion(outputs, targets)
-                # Backpropagate and optimise using AMP.
-                self.grad_scaler.scale(loss).backward()
-                self.grad_scaler.step(self.optimiser)
-                self.grad_scaler.update()
-            else:
-                outputs = self.model(*model_input)
-                loss = self.criterion(outputs, targets)
-                # Backpropagate.
-                loss.backward()
+            outputs = self.model(*model_input)
+            loss = self.criterion(outputs, targets)
+            # Backpropagate.
+            loss.backward()
 
             self.optimiser.step()
 
@@ -241,9 +227,7 @@ class Trainer:
                 # scaling.
                 auc_meter.update(targets, outputs)
             else:
-                print("GradScaler scale:", self.grad_scaler.get_scale())
                 print("Encountered NaN in output. Not updating AUC metric.\n")
-                print(outputs)
             loss_meter.update(loss.detach().item())
 
             # targets, outputs = get_argmax_from_prediction_and_target(
@@ -295,14 +279,8 @@ class Trainer:
             ):
                 model_input, targets = self.load_batch(input_batch)
 
-                if self.hyper_parameters["use_amp"]:
-                    with autocast():
-                        outputs = self.model(*model_input)
-                        loss = self.criterion(outputs, targets)
-                else:
-                    with autocast(enabled=False):
-                        outputs = self.model(*model_input)
-                        loss = self.criterion(outputs, targets)
+                outputs = self.model(*model_input)
+                loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
                 if not np.isnan(outputs.cpu().detach().numpy()).any():
@@ -369,6 +347,7 @@ class Trainer:
             "best_auc_epoch": self.best_auc_epoch,
             "best_val_loss": self.best_val_loss,
             "best_val_epoch": self.best_val_epoch,
+            "amp": amp.state_dict(),
         }
         filename = os.path.join(self.model_checkpoint_dir, f"{filename}.pth")
         print("Saving checkpoint: {} ...".format(filename))

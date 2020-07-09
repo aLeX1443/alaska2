@@ -361,11 +361,11 @@ EXPERIMENT_HYPER_PARAMETERS = {
         "seed": 2020,
         "validation_split": 0.2,
         # Model parameters:
-        "trained_model_path": None,
+        "trained_model_path": "alaska2/alaska_pytorch/checkpoints/rgb_qf_input_efficientnet_b6_1594116342_checkpoint.pth",
         # Training loop:
         "batch_size": 40,
         "n_epochs": 1000,
-        "learning_rate": 0.0003,
+        "learning_rate": 0.00015,
         "lr_scheduler_exp_gamma": 0.97,
         "training_workers": 10,
         # Other:
