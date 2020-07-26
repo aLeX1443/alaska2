@@ -130,7 +130,7 @@ class DCTDataSet(Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, torch.tensor]]:
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, torch.Tensor]]:
         kind, file, label = (
             self.kinds[index],
             self.files[index],
@@ -268,7 +268,7 @@ def extract_imagenet_files():
         os.system(f"rm -rf {load_dir}/{tar_file}")
 
 
-def one_hot(size: int, target: int) -> torch.tensor:
+def one_hot(size: int, target: int) -> torch.Tensor:
     vec = torch.zeros(size, dtype=torch.float32)
     vec[target] = 1.0
     return vec

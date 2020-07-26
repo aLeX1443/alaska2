@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
 
 from efficientnet_pytorch.model import MBConvBlock
 from efficientnet_pytorch.utils import (
@@ -378,13 +377,12 @@ class DCTMultipleInputEfficientNet(nn.Module):
         self._fc = nn.Linear(int(out_channels * 3), num_classes)
 
         self.relu = nn.ReLU(inplace=True)
-        self.l1 = nn.Linear(128, 1024)
-        self.l2 = nn.Linear(1024, 19)
+        self.l1 = nn.Linear(int(out_channels * 3), 1024)
+        self.l2 = nn.Linear(1024, num_classes)
 
-    # @autocast()
     def forward(
-        self, dct_y: torch.tensor, dct_cb: torch.tensor, dct_cr: torch.tensor
-    ) -> torch.tensor:
+        self, dct_y: torch.Tensor, dct_cb: torch.Tensor, dct_cr: torch.Tensor
+    ) -> torch.Tensor:
         batch_dimension = dct_y.size(0)
 
         # Convolution layers
@@ -407,18 +405,13 @@ class DCTMultipleInputEfficientNet(nn.Module):
         x = self._dropout(x)
 
         # TODO test MLP
-        # x = self.l1(x)
-        # x = self.relu(x)
-        # x = self.l2(x)
-        # # Make sure the final linear layer is in FP32
-        # with autocast(enabled=False):
-        #     x = x.float()
-        #     x = self.l2(x)
+        x = self.l1(x)
+        x = self.relu(x)
+        x = self.l2(x)
 
         # Make sure the final linear layer is in FP32
-        with autocast(enabled=False):
-            x = x.float()
-            x = self._fc(x)
+        # x = x.float()
+        # x = self._fc(x)
 
         return x
 
@@ -445,11 +438,6 @@ def build_dct_efficientnet_b3(n_classes: int) -> nn.Module:
     return DCTEfficientNet.from_pretrained(
         model_name="efficientnet-b3", num_classes=n_classes
     )
-    # TODO uncomment above and delete below
-    # return DCTEfficientNet.from_name(
-    #     model_name="efficientnet-b3",
-    #     override_params={"num_classes": n_classes},
-    # )
 
 
 def build_dct_efficientnet_b5(n_classes: int) -> nn.Module:

@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
 
 from efficientnet_pytorch import EfficientNet
 from efficientnet_pytorch.utils import (
@@ -18,8 +17,7 @@ class StegoEfficientNet(EfficientNet):
         print("Dropout rate:", self._global_params.dropout_rate)
         self._dropout = nn.Dropout(self._global_params.dropout_rate)
 
-    @autocast()
-    def forward(self, inputs: torch.tensor) -> torch.tensor:
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """
         Calls extract_features to extract features, applies final linear layer
         and returns logits.
@@ -33,9 +31,8 @@ class StegoEfficientNet(EfficientNet):
         # x = self._dropout(x)
 
         # Make sure the final linear layer is in FP32
-        with autocast(enabled=False):
-            x = x.float()
-            x = self._fc(x)
+        # x = x.float()
+        x = self._fc(x)
 
         return x
 
@@ -50,11 +47,13 @@ class StegoQFactorEfficientNet(EfficientNet):
         self._concatenated_fc = nn.Linear(
             out_channels + 3, self._global_params.num_classes
         )
+        # self.relu = nn.ReLU(inplace=True)
+        # self.l1 = nn.Linear(out_channels + 3, 2048)
+        # self.l2 = nn.Linear(2048, self._global_params.num_classes)
 
-    @autocast()
     def forward(
-        self, img: torch.tensor, quality_factor: torch.tensor
-    ) -> torch.tensor:
+        self, img: torch.Tensor, quality_factor: torch.Tensor
+    ) -> torch.Tensor:
         """
         Calls extract_features to extract features, applies final linear layer
         and returns logits.
@@ -71,10 +70,12 @@ class StegoQFactorEfficientNet(EfficientNet):
         # the quality factor.
         x = torch.cat([x, quality_factor], dim=1)
 
-        # Make sure the final linear layer is in FP32
-        with autocast(enabled=False):
-            x = x.float()
-            x = self._concatenated_fc(x)
+        # MLP block
+        # x = self.l1(x)
+        # x = self.relu(x)
+        # x = self.l2(x)
+
+        x = self._concatenated_fc(x)
 
         return x
 
@@ -122,9 +123,9 @@ class StegoQFactorEfficientNet(EfficientNet):
                 state_dict.pop(key)
 
             res = model.load_state_dict(state_dict, strict=False)
-            assert set(res.missing_keys) == set(
-                missing_keys
-            ), "issue loading pretrained weights"
+            # assert set(res.missing_keys) == set(
+            #     missing_keys
+            # ), "issue loading pretrained weights"
         print("Loaded pretrained weights for {}".format(model_name))
 
 

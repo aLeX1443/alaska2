@@ -10,7 +10,7 @@ class LabelSmoothing(nn.Module):
         self.confidence = 1.0 - smoothing
         self.smoothing = smoothing
 
-    def forward(self, x: torch.tensor, target: torch.tensor) -> torch.tensor:
+    def forward(self, x: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.training:
             # x = x.float()
             # target = target.float()

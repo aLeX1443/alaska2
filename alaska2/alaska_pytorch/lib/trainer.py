@@ -2,7 +2,6 @@ from typing import Dict, Tuple
 import gc
 import os
 
-import apex as apex
 import numpy as np
 import time
 from tensorboardX import SummaryWriter
@@ -13,27 +12,21 @@ import torch.cuda
 import torch.distributed
 from torch import nn
 
-from apex import amp
-from apex.parallel import DistributedDataParallel
-
 try:
-    from torch.cuda.amp import GradScaler, autocast
+    from apex import amp
 except ImportError:
-    print("Could not load torch.cuda.amp")
+    print("Could not import NVIDIA Apex")
 
 from tqdm import tqdm
 
 from alaska2.alaska_pytorch.lib.utils import (
     make_dir_if_not_exists,
     LabelSmoothing,
-    EmptyScaler,
 )
 from alaska2.alaska_pytorch.lib.metrics import (
     MovingAverageMetric,
     WeightedAUCMeter,
     BatchAverage,
-    alaska_weighted_auc,
-    get_argmax_from_prediction_and_target,
 )
 
 
@@ -46,19 +39,14 @@ class Trainer:
         self.train_data_loader = train_data_loader
         self.val_data_loader = val_data_loader
         self.devices = hyper_parameters["devices"]
-        self.main_device = self.devices[0]
+        self.main_device = "cuda:0"
 
         # Build the model.
         self.model = hyper_parameters["model"](
             n_classes=hyper_parameters["n_classes"]
-        )
+        ).to(self.main_device)
 
         # self.model = apex.parallel.convert_syncbn_model(self.model)
-        self.model = self.model.cuda()
-
-        hyper_parameters["batch_size"] = (
-            int(len(self.devices)) * hyper_parameters["batch_size"]
-        )
 
         # Define a reusable loss criterion.
         self.criterion = LabelSmoothing().to(self.main_device)
@@ -69,9 +57,10 @@ class Trainer:
         )
 
         # Enable Automatic Mixed Precision (AMP).
-        self.model, self.optimiser = amp.initialize(
-            self.model, self.optimiser, opt_level="O1"
-        )
+        if hyper_parameters["use_amp"]:
+            self.model, self.optimiser = amp.initialize(
+                self.model, self.optimiser, opt_level="O1", loss_scale=2 ** 10
+            )
 
         # Synchronise Batch Normalisation across devices.
         # self.model = nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
@@ -81,13 +70,13 @@ class Trainer:
             self.main_device
         )
 
-        # self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
-        #     self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
-        # )
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+            self.optimiser, hyper_parameters["lr_scheduler_exp_gamma"]
+        )
 
         # Define objects to keep track of smooth metrics.
-        self.train_auc_metric = MovingAverageMetric(window_size=200)
-        self.train_loss_metric = MovingAverageMetric(window_size=200)
+        self.train_auc_metric = MovingAverageMetric(window_size=1)
+        self.train_loss_metric = MovingAverageMetric(window_size=500)
 
         self.model_checkpoint_dir = hyper_parameters["model_checkpoint_dir"]
         make_dir_if_not_exists(self.model_checkpoint_dir)
@@ -138,11 +127,18 @@ class Trainer:
             else:
                 try:
                     self.optimiser.load_state_dict(checkpoint["optimiser"])
-                except ValueError:
-                    pass
-            self.model.module.load_state_dict(
-                pre_trained_state_dict, strict=False
-            )
+                except ValueError as e:
+                    print("Could not load optimiser state dict")
+                    print(e)
+            try:
+                self.model.module.load_state_dict(
+                    pre_trained_state_dict, strict=False
+                )
+            except Exception as e:
+                print(e)
+                self.model.load_state_dict(
+                    pre_trained_state_dict, strict=False
+                )
             # self.scheduler.load_state_dict(checkpoint["scheduler"])
             self.start_epoch = checkpoint["epoch"] + 1
             try:
@@ -171,8 +167,8 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.n_epochs + 1):
             self.epoch = epoch
-            # lr = self.scheduler.get_last_lr()
-            lr = self.hyper_parameters["learning_rate"]
+            lr = self.scheduler.get_last_lr()
+            # lr = self.hyper_parameters["learning_rate"]
             print(f" Epoch: {epoch}, LR: {lr}")
 
             self._train_epoch(epoch=epoch)
@@ -180,7 +176,7 @@ class Trainer:
             self._save_checkpoint(
                 epoch=epoch, filename=self.training_run_name + "_checkpoint"
             )
-            # self.scheduler.step()
+            self.scheduler.step()
 
             with torch.no_grad():
                 validation_auc, validation_loss = self._valid_epoch(epoch)
@@ -215,6 +211,13 @@ class Trainer:
             self.optimiser.zero_grad()
 
             outputs = self.model(*model_input)
+
+            # Make sure there are no NaN values introduced by loss
+            # scaling.
+            if np.isnan(outputs.cpu().detach().numpy()).any():
+                print("Encountered NaN in output, skipping batch")
+                continue
+
             loss = self.criterion(outputs, targets)
             # Backpropagate.
             loss.backward()
@@ -222,28 +225,13 @@ class Trainer:
             self.optimiser.step()
 
             # Update the batch metrics.
-            if not np.isnan(outputs.cpu().detach().numpy()).any():
-                # Make sure there are no NaN values introduced by loss
-                # scaling.
-                auc_meter.update(targets, outputs)
-            else:
-                print("Encountered NaN in output. Not updating AUC metric.\n")
+            auc_meter.update(targets, outputs)
             loss_meter.update(loss.detach().item())
-
-            # targets, outputs = get_argmax_from_prediction_and_target(
-            #     targets, outputs
-            # )
 
             # Update the moving average metrics that will be logged in
             # TensorBoard.
-            # self.train_auc_metric.update(alaska_weighted_auc(targets, outputs))
             self.train_auc_metric.update(auc_meter.avg)
             self.train_loss_metric.update(loss.detach().item())
-
-            # print(
-            #     f"Train AUC: {auc_meter.avg}, "
-            #     f"Train loss: {loss.detach().item()}\n"
-            # )
 
             gc.collect()
 
@@ -280,17 +268,18 @@ class Trainer:
                 model_input, targets = self.load_batch(input_batch)
 
                 outputs = self.model(*model_input)
+
+                # Make sure there are no NaN values introduced by loss
+                # scaling.
+                if np.isnan(outputs.cpu().detach().numpy()).any():
+                    print("Encountered NaN in output, skipping batch")
+                    continue
+
                 loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
-                if not np.isnan(outputs.cpu().detach().numpy()).any():
-                    # Make sure there are no NaN values introduced by loss
-                    # scaling.
-                    auc_meter.update(targets, outputs)
-                else:
-                    print(
-                        "Encountered NaN in output. Not updating AUC metric.\n"
-                    )
+                auc_meter.update(targets, outputs)
+
                 loss_meter.update(loss.detach().item())
                 gc.collect()
 
@@ -339,7 +328,9 @@ class Trainer:
     def _save_checkpoint(self, epoch: float, filename: str) -> None:
         state = {
             "epoch": epoch,
-            "state_dict": self.model.module.state_dict(),
+            "state_dict": self.model.module.state_dict()
+            if len(self.devices) > 1
+            else self.model.state_dict(),
             "optimiser": self.optimiser.state_dict(),
             # "scheduler": self.scheduler.state_dict(),
             "hyper_parameters": self.hyper_parameters,
@@ -347,7 +338,7 @@ class Trainer:
             "best_auc_epoch": self.best_auc_epoch,
             "best_val_loss": self.best_val_loss,
             "best_val_epoch": self.best_val_epoch,
-            "amp": amp.state_dict(),
+            # "amp": amp.state_dict(),
         }
         filename = os.path.join(self.model_checkpoint_dir, f"{filename}.pth")
         print("Saving checkpoint: {} ...".format(filename))

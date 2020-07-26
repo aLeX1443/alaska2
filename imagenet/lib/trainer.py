@@ -11,11 +11,6 @@ import torch.cuda
 import torch.distributed
 from torch import nn
 
-try:
-    from torch.cuda.amp import GradScaler, autocast
-except ImportError:
-    print("Could not load torch.cuda.amp")
-
 from tqdm import tqdm
 
 from alaska2.alaska_pytorch.lib.utils import (
@@ -196,20 +191,10 @@ class Trainer:
 
             self.optimiser.zero_grad()
 
-            if self.hyper_parameters["use_amp"]:
-                with autocast():
-                    outputs = self.model(*model_input)
-                    loss = self.criterion(outputs, targets)
-                # Backpropagate and optimise using AMP.
-                self.grad_scaler.scale(loss).backward()
-                self.grad_scaler.step(self.optimiser)
-                self.grad_scaler.update()
-            else:
-                with autocast(enabled=False):
-                    outputs = self.model(*model_input)
-                    loss = self.criterion(outputs, targets)
-                    # Backpropagate.
-                    loss.backward()
+            outputs = self.model(*model_input)
+            loss = self.criterion(outputs, targets)
+            # Backpropagate.
+            loss.backward()
 
             self.optimiser.step()
 
@@ -292,14 +277,8 @@ class Trainer:
             ):
                 model_input, targets = self.load_batch(input_batch)
 
-                if self.hyper_parameters["use_amp"]:
-                    with autocast():
-                        outputs = self.model(*model_input)
-                        loss = self.criterion(outputs, targets)
-                else:
-                    with autocast(enabled=False):
-                        outputs = self.model(*model_input)
-                        loss = self.criterion(outputs, targets)
+                outputs = self.model(*model_input)
+                loss = self.criterion(outputs, targets)
 
                 # Update the metrics.
                 if not np.isnan(outputs.cpu().numpy()).any():

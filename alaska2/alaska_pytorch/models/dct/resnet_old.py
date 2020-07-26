@@ -6,7 +6,6 @@ inputs from (32, 32, 64) to (64, 64, 64) to match the Y channel.
 """
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
 
 from torchvision.models import ResNet
 
@@ -173,10 +172,9 @@ class DCTResNet(ResNet):
             block=Bottleneck, planes=256, blocks=6, stride=1, dilate=False
         )
 
-    @autocast()
     def forward(
-        self, dct_y: torch.tensor, dct_cb: torch.tensor, dct_cr: torch.tensor
-    ) -> torch.tensor:
+        self, dct_y: torch.Tensor, dct_cb: torch.Tensor, dct_cr: torch.Tensor
+    ) -> torch.Tensor:
         # Upsample the Cb channel: (64, 32, 32) -> (64, 64, 64)
         upsampled_cb = self.deconvolution_cb(dct_cb)
         # Upsample the Cr channel: (64, 32, 32) -> (64, 64, 64)
@@ -196,9 +194,8 @@ class DCTResNet(ResNet):
         x = torch.flatten(x, 1)
 
         # Make sure the final linear layer is in FP32
-        with autocast(enabled=False):
-            x = x.float()
-            x = self.fc(x)
+        # x = x.float()
+        x = self.fc(x)
 
         return x
 
