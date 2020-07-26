@@ -4,7 +4,7 @@ from sklearn.metrics import auc, roc_curve
 
 import torch
 from torch import nn
-from typing import Tuple
+from typing import Tuple, Optional
 
 
 class BatchAverage:
@@ -34,7 +34,7 @@ class MovingAverageMetric:
 
 
 def get_argmax_from_prediction_and_target(
-    y_true: torch.tensor, y_pred: torch.tensor
+    y_true: torch.Tensor, y_pred: torch.Tensor
 ) -> Tuple[np.ndarray, np.ndarray]:
     y_true = y_true.cpu().numpy().argmax(axis=1).clip(min=0, max=1).astype(int)
     y_pred = 1 - nn.functional.softmax(y_pred, dim=1).data.cpu().numpy()[:, 0]
@@ -50,7 +50,7 @@ class WeightedAUCMeter:
         self.y_true = np.array([0, 1])
         self.y_pred = np.array([0.5, 0.5])
 
-    def update(self, y_true: torch.tensor, y_pred: torch.tensor) -> None:
+    def update(self, y_true: torch.Tensor, y_pred: torch.Tensor) -> None:
         y_true, y_pred = get_argmax_from_prediction_and_target(y_true, y_pred)
         self.y_true = np.hstack((self.y_true, y_true))
         self.y_pred = np.hstack((self.y_pred, y_pred))
@@ -60,7 +60,9 @@ class WeightedAUCMeter:
         return alaska_weighted_auc(self.y_true, self.y_pred)
 
 
-def alaska_weighted_auc(y_true: torch.tensor, y_valid: torch.tensor) -> float:
+def alaska_weighted_auc(
+    y_true: np.ndarray, y_valid: np.ndarray
+) -> Optional[float]:
     tpr_thresholds = [0.0, 0.4, 1.0]
     weights = [2, 1]
 
@@ -89,8 +91,8 @@ def alaska_weighted_auc(y_true: torch.tensor, y_valid: torch.tensor) -> float:
             sub_metric = score * weight
             competition_metric += sub_metric
     except Exception as e:
-        print(f"Exception in computing AUC: {e}.\nReturning 0.0")
-        return 0.0
+        print(f"Exception in computing AUC: {e}.")
+        return None
     return competition_metric / normalisation
 
 

@@ -30,9 +30,11 @@ from alaska2.lib.data_loaders import (
 
 
 def make_train_and_validation_data_loaders(
-    hyper_parameters: Dict, validation_fold_number: int = 0,
+    hyper_parameters: Dict,
 ) -> Tuple[DataLoader, DataLoader]:
     input_data_type = hyper_parameters["input_data_type"]
+    validation_fold_number = hyper_parameters["validation_fold_number"]
+
     if input_data_type == "RGB":
         data_set_class = ColourDataSet
         # Define a set of image augmentations.
@@ -120,7 +122,9 @@ def make_train_and_validation_data_loaders(
         sampler=BalanceClassSampler(
             labels=train_data_set.get_labels(), mode="downsampling"
         ),
-        batch_size=hyper_parameters["batch_size"],
+        batch_size=int(
+            hyper_parameters["batch_size"] * len(hyper_parameters["devices"])
+        ),
         shuffle=False,
         num_workers=hyper_parameters["training_workers"],
         pin_memory=False,
@@ -128,7 +132,9 @@ def make_train_and_validation_data_loaders(
     )
     validation_data_loader = DataLoader(
         validation_data_set,
-        batch_size=hyper_parameters["batch_size"],
+        batch_size=int(
+            hyper_parameters["batch_size"] * len(hyper_parameters["devices"])
+        ),
         shuffle=False,
         num_workers=hyper_parameters["training_workers"],
         pin_memory=False,
@@ -168,8 +174,8 @@ class ColourDataSet(Dataset):
     def __getitem__(
         self, index: int
     ) -> Union[
-        Tuple[np.ndarray, np.ndarray, torch.tensor],
-        Tuple[np.ndarray, torch.tensor],
+        Tuple[np.ndarray, np.ndarray, torch.Tensor],
+        Tuple[np.ndarray, torch.Tensor],
     ]:
         kind, image_name, label = (
             self.kinds[index],
@@ -251,7 +257,7 @@ class DCTDataSet(Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, torch.tensor]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, torch.Tensor]:
         kind, image_name, label = (
             self.kinds[index],
             self.image_names[index],
@@ -282,7 +288,7 @@ class DCTDataSet(Dataset):
         return list(self.labels)
 
 
-def one_hot(size: int, target: int) -> torch.tensor:
+def one_hot(size: int, target: int) -> torch.Tensor:
     vec = torch.zeros(size, dtype=torch.float32)
     vec[target] = 1.0
     return vec

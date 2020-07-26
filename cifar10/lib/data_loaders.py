@@ -153,7 +153,7 @@ class DCTDataSet(Dataset):
 
     def __getitem__(
         self, index: int
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, torch.tensor]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, torch.Tensor]:
         kind, file, label = (
             self.kinds[index],
             self.files[index],

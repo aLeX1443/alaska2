@@ -33,7 +33,7 @@ def perform_inference(experiment_number: int) -> None:
     input_data_type = hyper_parameters["input_data_type"]
 
     # device = "cpu"
-    device = "cuda:0"
+    device = "cuda:1"
 
     with torch.no_grad():
         # Build the model.
@@ -66,7 +66,8 @@ def perform_inference(experiment_number: int) -> None:
             ):
                 if hyper_parameters["use_quality_factor"]:
                     prediction = model(
-                        input_data[0].to(device), input_data[1].to(device)
+                        input_data[0].to(device),
+                        input_data[1].float().to(device),
                     )
                 elif input_data_type == "DCT":
                     prediction = model(

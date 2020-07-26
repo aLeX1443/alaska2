@@ -21,12 +21,21 @@ RUN apt-get -y update \
 RUN pip install --upgrade pip
 RUN pip install opencv-python
 RUN pip install pandas trimesh boto3 tqdm pillow scipy scikit-learn \
-    click albumentations efficientnet_pytorch tensorboardX catalyst \
-    cython pytest jpeg2dct torchviz torch_optimizer tensorflow-gpu
+    click albumentations tensorboardX catalyst cython pytest jpeg2dct \
+    torchviz torch_optimizer tensorflow-gpu
 
 # Install the nightly build of PyTorch to use AMP.
 RUN pip install --pre -U torch torchvision \
     -f https://download.pytorch.org/whl/nightly/cu101/torch_nightly.html
+
+# RUN conda install -c conda-forge nvidia-apex -y
+
+# TODO use a specific commit
+# RUN pip install -v --no-cache-dir git+https://github.com/lukemelas/EfficientNet-PyTorch.git
+RUN pip install efficientnet_pytorch
+
+RUN pip install -v --no-cache-dir --global-option="--cpp_ext" \
+    --global-option="--cuda_ext" git+https://github.com/NVIDIA/apex.git
 
 RUN git clone https://github.com/dwgoon/jpegio
 RUN pip install jpegio/.
